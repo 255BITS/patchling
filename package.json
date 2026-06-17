@@ -14,7 +14,8 @@
   ],
   "scripts": {
     "test": "node --test",
-    "test:live": "GPTDIFF_LIVE=1 node --test test/live.test.js"
+    "test:live": "GPTDIFF_LIVE=1 node --test test/live.test.js",
+    "benchmark": "node benchmark/run.js"
   },
   "keywords": [
     "gptdiff",

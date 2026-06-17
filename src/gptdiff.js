@@ -6,7 +6,7 @@
  * the logic is fully unit-testable without network access.
  */
 
-import { parseDiffPerFile } from './applydiff.js';
+import { parseDiffPerFile, applyPatchToFile } from './applydiff.js';
 import {
   swallowReasoning,
   stripBadOutput,
@@ -227,9 +227,15 @@ export async function callLlmForApplyWithThink(filePath, originalContent, fileDi
 }
 
 /**
- * Apply unified diffs to a map of file contents with AI-powered conflict
- * resolution. Handles creations, modifications, and deletions. Returns a new
- * map (the input is not mutated). Deleted files are omitted.
+ * Apply unified diffs to a map of file contents. Handles creations,
+ * modifications, and deletions. Returns a new map (the input is not mutated).
+ * Deleted files are omitted.
+ *
+ * Each file is processed in parallel. By default, every file is first applied
+ * deterministically (no LLM call) via {@link applyPatchToFile}; only files
+ * whose patch does not apply cleanly fall back to AI-powered conflict
+ * resolution. Set `opts.forceLlm` to skip the deterministic fast path and send
+ * every file to the LLM.
  *
  * @param {string} diffText
  * @param {Record<string, string>} files
@@ -238,6 +244,7 @@ export async function callLlmForApplyWithThink(filePath, originalContent, fileDi
  * @param {string} [opts.apiKey]
  * @param {string} [opts.baseUrl]
  * @param {number} [opts.maxTokens]
+ * @param {boolean} [opts.forceLlm] skip the deterministic fast path
  * @param {Function} [opts.callLlmForApply] injectable single-file applier
  * @returns {Promise<Record<string, string>>}
  */
@@ -260,6 +267,15 @@ export async function smartapply(diffText, files, opts = {}) {
         delete result[path];
         return;
       }
+      // Fast path: try to apply the patch deterministically, no LLM call.
+      if (!opts.forceLlm) {
+        const deterministic = applyPatchToFile(original, patch);
+        if (deterministic !== null) {
+          result[path] = deterministic;
+          return;
+        }
+      }
+      // Fallback: the patch did not apply cleanly, let the LLM resolve it.
       const updated = await callLlmForApplyWithThink(path, original, patch, model, applyOpts);
       result[path] = stripBadOutput(updated, original);
     }),

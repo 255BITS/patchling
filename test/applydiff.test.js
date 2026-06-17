@@ -1,6 +1,42 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyDiff } from '../src/index.js';
+import { applyDiff, applyPatchToFile } from '../src/index.js';
+
+test('applyPatchToFile tolerates a drifted multi-hunk @@ line number', () => {
+  // The @@ header says -7 but the matching context actually starts a line
+  // earlier; the hunk must still locate and apply by content.
+  const original =
+    'import os\nimport json\n\nDEFAULT_PATH = "config.json"\n\n\n' +
+    'def load_config(path=DEFAULT_PATH):\n    with open(path) as f:\n        return json.load(f)\n';
+  const patch =
+    '@@ -7,3 +7,3 @@ DEFAULT_PATH = "config.json"\n' +
+    ' def load_config(path=DEFAULT_PATH):\n' +
+    '     with open(path) as f:\n' +
+    '-        return json.load(f)\n' +
+    '+        return json.load(f) or {}\n';
+  const got = applyPatchToFile(original, patch);
+  assert.ok(got.includes('return json.load(f) or {}'));
+  assert.ok(!got.includes('return json.load(f)\n'));
+});
+
+test('applyPatchToFile keeps a blank-line addition after a newline-less last line', () => {
+  // Original has no trailing newline; the diff appends a blank line then code.
+  const original = 'func Square(x int) int {\n\treturn x * x\n}';
+  const patch =
+    '@@ -1,3 +1,6 @@\n' +
+    ' func Square(x int) int {\n' +
+    ' \treturn x * x\n' +
+    ' }\n' +
+    '+\n' +
+    '+func Cube(x int) int {\n' +
+    '+\treturn x * x * x\n' +
+    '+}\n';
+  const got = applyPatchToFile(original, patch);
+  assert.equal(
+    got,
+    'func Square(x int) int {\n\treturn x * x\n}\n\nfunc Cube(x int) int {\n\treturn x * x * x\n}\n',
+  );
+});
 
 test('test_apply_diff_success', () => {
   const files = { 'example.txt': 'original content\n' };
@@ -18,18 +54,36 @@ test('test_apply_diff_success', () => {
 });
 
 test('test_apply_diff_failure', () => {
+  // The applier locates hunks by content, not by the @@ line numbers, so a
+  // diff fails only when its context/deletion lines are not found in the file.
   const files = { 'example.txt': 'original content\n' };
   const diffText =
     'diff --git a/example.txt b/example.txt\n' +
     '--- a/example.txt\n' +
     '+++ a/example.txt\n' +
     '@@ -2,1 +2,1 @@\n' +
-    '-original content\n' +
+    '-nonexistent content\n' +
     '+modified content\n';
   const result = applyDiff(files, diffText);
   assert.equal(result.changed, false, 'apply_diff should return False when the diff fails to apply');
   assert.ok(result.files['example.txt'].includes('original content'),
     'File content should remain unchanged on failure');
+});
+
+test('test_apply_diff_tolerates_wrong_line_numbers', () => {
+  // The @@ header points at line 2, but the deleted content is on line 1. The
+  // applier matches by content (fuzz) and applies it anyway.
+  const files = { 'example.txt': 'original content\n' };
+  const diffText =
+    'diff --git a/example.txt b/example.txt\n' +
+    '--- a/example.txt\n' +
+    '+++ b/example.txt\n' +
+    '@@ -2,1 +2,1 @@\n' +
+    '-original content\n' +
+    '+modified content\n';
+  const result = applyDiff(files, diffText);
+  assert.equal(result.changed, true);
+  assert.equal(result.files['example.txt'], 'modified content\n');
 });
 
 test('test_apply_diff_file_deletion', () => {

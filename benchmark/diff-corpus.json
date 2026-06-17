@@ -1,0 +1,1795 @@
+{
+  "examples": [
+    {
+      "name": "single-line-mod-tax-rate",
+      "category": "single-line-mod",
+      "language": "python",
+      "original": {
+        "billing/invoice.py": "def calculate_total(items):\n    subtotal = sum(item.price for item in items)\n    tax_rate = 0.07\n    tax = subtotal * tax_rate\n    return subtotal + tax\n"
+      },
+      "diff": "--- a/billing/invoice.py\n+++ b/billing/invoice.py\n@@ -1,5 +1,5 @@\n def calculate_total(items):\n     subtotal = sum(item.price for item in items)\n-    tax_rate = 0.07\n+    tax_rate = 0.08\n     tax = subtotal * tax_rate\n     return subtotal + tax\n",
+      "expected": {
+        "billing/invoice.py": "def calculate_total(items):\n    subtotal = sum(item.price for item in items)\n    tax_rate = 0.08\n    tax = subtotal * tax_rate\n    return subtotal + tax\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-retry-count",
+      "category": "single-line-mod",
+      "language": "python",
+      "original": {
+        "net/client.py": "import time\nimport requests\n\n\ndef fetch_with_retry(url):\n    max_retries = 3\n    for attempt in range(max_retries):\n        try:\n            return requests.get(url).json()\n        except requests.RequestException:\n            time.sleep(2 ** attempt)\n    raise RuntimeError(\"all retries exhausted\")\n"
+      },
+      "diff": "--- a/net/client.py\n+++ b/net/client.py\n@@ -4,7 +4,7 @@\n \n def fetch_with_retry(url):\n-    max_retries = 3\n+    max_retries = 5\n     for attempt in range(max_retries):\n         try:\n             return requests.get(url).json()\n",
+      "expected": {
+        "net/client.py": "import time\nimport requests\n\n\ndef fetch_with_retry(url):\n    max_retries = 5\n    for attempt in range(max_retries):\n        try:\n            return requests.get(url).json()\n        except requests.RequestException:\n            time.sleep(2 ** attempt)\n    raise RuntimeError(\"all retries exhausted\")\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-greeting-string",
+      "category": "single-line-mod",
+      "language": "python",
+      "original": {
+        "app/greet.py": "def greet(name):\n    message = \"Hello, \" + name\n    return message\n\n\ndef farewell(name):\n    return \"Bye, \" + name\n"
+      },
+      "diff": "--- a/app/greet.py\n+++ b/app/greet.py\n@@ -1,3 +1,3 @@\n def greet(name):\n-    message = \"Hello, \" + name\n+    message = \"Welcome, \" + name + \"!\"\n     return message\n",
+      "expected": {
+        "app/greet.py": "def greet(name):\n    message = \"Welcome, \" + name + \"!\"\n    return message\n\n\ndef farewell(name):\n    return \"Bye, \" + name\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-comparison-operator",
+      "category": "single-line-mod",
+      "language": "python",
+      "original": {
+        "utils/validate.py": "def is_valid_age(age):\n    if age > 18:\n        return True\n    return False\n"
+      },
+      "diff": "--- a/utils/validate.py\n+++ b/utils/validate.py\n@@ -1,4 +1,4 @@\n def is_valid_age(age):\n-    if age > 18:\n+    if age >= 18:\n         return True\n     return False\n",
+      "expected": {
+        "utils/validate.py": "def is_valid_age(age):\n    if age >= 18:\n        return True\n    return False\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-default-timeout",
+      "category": "single-line-mod",
+      "language": "python",
+      "original": {
+        "db/connection.py": "class Connection:\n    def __init__(self, host, port):\n        self.host = host\n        self.port = port\n        self.timeout = 30\n        self.connected = False\n\n    def open(self):\n        self.connected = True\n"
+      },
+      "diff": "--- a/db/connection.py\n+++ b/db/connection.py\n@@ -3,7 +3,7 @@\n         self.host = host\n         self.port = port\n-        self.timeout = 30\n+        self.timeout = 60\n         self.connected = False\n \n     def open(self):\n",
+      "expected": {
+        "db/connection.py": "class Connection:\n    def __init__(self, host, port):\n        self.host = host\n        self.port = port\n        self.timeout = 60\n        self.connected = False\n\n    def open(self):\n        self.connected = True\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-return-expression",
+      "category": "single-line-mod",
+      "language": "python",
+      "original": {
+        "math/geometry.py": "import math\n\n\ndef circle_area(radius):\n    return 3.14 * radius * radius\n\n\ndef circle_circumference(radius):\n    return 2 * math.pi * radius\n"
+      },
+      "diff": "--- a/math/geometry.py\n+++ b/math/geometry.py\n@@ -1,5 +1,5 @@\n import math\n \n \n def circle_area(radius):\n-    return 3.14 * radius * radius\n+    return math.pi * radius ** 2\n",
+      "expected": {
+        "math/geometry.py": "import math\n\n\ndef circle_area(radius):\n    return math.pi * radius ** 2\n\n\ndef circle_circumference(radius):\n    return 2 * math.pi * radius\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-log-level",
+      "category": "single-line-mod",
+      "language": "python",
+      "original": {
+        "core/logger.py": "import logging\n\n\ndef setup_logging():\n    logger = logging.getLogger(\"app\")\n    logger.setLevel(logging.DEBUG)\n    handler = logging.StreamHandler()\n    logger.addHandler(handler)\n    return logger\n"
+      },
+      "diff": "--- a/core/logger.py\n+++ b/core/logger.py\n@@ -4,7 +4,7 @@\n def setup_logging():\n     logger = logging.getLogger(\"app\")\n-    logger.setLevel(logging.DEBUG)\n+    logger.setLevel(logging.INFO)\n     handler = logging.StreamHandler()\n     logger.addHandler(handler)\n     return logger\n",
+      "expected": {
+        "core/logger.py": "import logging\n\n\ndef setup_logging():\n    logger = logging.getLogger(\"app\")\n    logger.setLevel(logging.INFO)\n    handler = logging.StreamHandler()\n    logger.addHandler(handler)\n    return logger\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-dict-key-default",
+      "category": "single-line-mod",
+      "language": "python",
+      "original": {
+        "config/settings.py": "def load_settings(raw):\n    settings = {}\n    settings[\"debug\"] = raw.get(\"debug\", False)\n    settings[\"workers\"] = raw.get(\"workers\", 1)\n    settings[\"region\"] = raw.get(\"region\", \"us-east-1\")\n    return settings\n"
+      },
+      "diff": "--- a/config/settings.py\n+++ b/config/settings.py\n@@ -1,6 +1,6 @@\n def load_settings(raw):\n     settings = {}\n     settings[\"debug\"] = raw.get(\"debug\", False)\n-    settings[\"workers\"] = raw.get(\"workers\", 1)\n+    settings[\"workers\"] = raw.get(\"workers\", 4)\n     settings[\"region\"] = raw.get(\"region\", \"us-east-1\")\n     return settings\n",
+      "expected": {
+        "config/settings.py": "def load_settings(raw):\n    settings = {}\n    settings[\"debug\"] = raw.get(\"debug\", False)\n    settings[\"workers\"] = raw.get(\"workers\", 4)\n    settings[\"region\"] = raw.get(\"region\", \"us-east-1\")\n    return settings\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-version-bump",
+      "category": "single-line-mod",
+      "language": "javascript",
+      "original": {
+        "src/version.js": "export const NAME = 'gptdiff';\nexport const VERSION = '1.2.0';\nexport const BUILD = 'stable';\n"
+      },
+      "diff": "--- a/src/version.js\n+++ b/src/version.js\n@@ -1,3 +1,3 @@\n export const NAME = 'gptdiff';\n-export const VERSION = '1.2.0';\n+export const VERSION = '1.3.0';\n export const BUILD = 'stable';\n",
+      "expected": {
+        "src/version.js": "export const NAME = 'gptdiff';\nexport const VERSION = '1.3.0';\nexport const BUILD = 'stable';\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-timeout-default",
+      "category": "single-line-mod",
+      "language": "javascript",
+      "original": {
+        "lib/config.js": "function loadConfig(opts = {}) {\n const timeout = opts.timeout ?? 3000;\n const retries = opts.retries ?? 2;\n return { timeout, retries };\n}\n\nmodule.exports = { loadConfig };\n"
+      },
+      "diff": "--- a/lib/config.js\n+++ b/lib/config.js\n@@ -1,5 +1,5 @@\n function loadConfig(opts = {}) {\n-  const timeout = opts.timeout ?? 3000;\n+  const timeout = opts.timeout ?? 5000;\n   const retries = opts.retries ?? 2;\n   return { timeout, retries };\n }\n",
+      "expected": {
+        "lib/config.js": "function loadConfig(opts = {}) {\n  const timeout = opts.timeout ?? 5000;\n  const retries = opts.retries ?? 2;\n  return { timeout, retries };\n}\n\nmodule.exports = { loadConfig };\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-fix-operator",
+      "category": "single-line-mod",
+      "language": "javascript",
+      "original": {
+        "utils/math.js": "export function isEven(n) {\n  return n % 2 == 0;\n}\n\nexport function double(n) {\n  return n * 2;\n}\n"
+      },
+      "diff": "--- a/utils/math.js\n+++ b/utils/math.js\n@@ -1,3 +1,3 @@\n export function isEven(n) {\n-  return n % 2 == 0;\n+  return n % 2 === 0;\n }\n",
+      "expected": {
+        "utils/math.js": "export function isEven(n) {\n  return n % 2 === 0;\n}\n\nexport function double(n) {\n  return n * 2;\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-api-endpoint",
+      "category": "single-line-mod",
+      "language": "javascript",
+      "original": {
+        "client/api.js": "const BASE = 'https://api.example.com';\n\nasync function getUser(id) {\n  const res = await fetch(`${BASE}/v1/users/${id}`);\n  return res.json();\n}\n\nexport { getUser };\n"
+      },
+      "diff": "--- a/client/api.js\n+++ b/client/api.js\n@@ -2,5 +2,5 @@\n \n async function getUser(id) {\n-  const res = await fetch(`${BASE}/v1/users/${id}`);\n+  const res = await fetch(`${BASE}/v2/users/${id}`);\n   return res.json();\n }\n",
+      "expected": {
+        "client/api.js": "const BASE = 'https://api.example.com';\n\nasync function getUser(id) {\n  const res = await fetch(`${BASE}/v2/users/${id}`);\n  return res.json();\n}\n\nexport { getUser };\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-react-className",
+      "category": "single-line-mod",
+      "language": "javascript",
+      "original": {
+        "components/Button.jsx": "import React from 'react';\n\nexport default function Button({ label, onClick }) {\n  return (\n    <button className=\"btn-primary\" onClick={onClick}>\n      {label}\n    </button>\n  );\n}\n"
+      },
+      "diff": "--- a/components/Button.jsx\n+++ b/components/Button.jsx\n@@ -4,5 +4,5 @@\n   return (\n-    <button className=\"btn-primary\" onClick={onClick}>\n+    <button className=\"btn-secondary\" onClick={onClick}>\n       {label}\n     </button>\n   );\n",
+      "expected": {
+        "components/Button.jsx": "import React from 'react';\n\nexport default function Button({ label, onClick }) {\n  return (\n    <button className=\"btn-secondary\" onClick={onClick}>\n      {label}\n    </button>\n  );\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-default-export-name",
+      "category": "single-line-mod",
+      "language": "javascript",
+      "original": {
+        "store/index.js": "import { createStore } from 'redux';\nimport rootReducer from './reducers';\n\nconst store = createStore(rootReducer);\n\nexport default store;\n"
+      },
+      "diff": "--- a/store/index.js\n+++ b/store/index.js\n@@ -2,5 +2,5 @@\n import rootReducer from './reducers';\n \n-const store = createStore(rootReducer);\n+const store = createStore(rootReducer, {});\n \n export default store;\n",
+      "expected": {
+        "store/index.js": "import { createStore } from 'redux';\nimport rootReducer from './reducers';\n\nconst store = createStore(rootReducer, {});\n\nexport default store;\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "single-line-mod-array-method",
+      "category": "single-line-mod",
+      "language": "javascript",
+      "original": {
+        "src/transform.js": "export function pickActive(items) {\n  const result = items.filter(i => i.active);\n  return result.map(i => i.id);\n}\n"
+      },
+      "diff": "--- a/src/transform.js\n+++ b/src/transform.js\n@@ -1,4 +1,4 @@\n export function pickActive(items) {\n-  const result = items.filter(i => i.active);\n+  const result = items.filter(i => i.active && !i.archived);\n   return result.map(i => i.id);\n }\n",
+      "expected": {
+        "src/transform.js": "export function pickActive(items) {\n  const result = items.filter(i => i.active && !i.archived);\n  return result.map(i => i.id);\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-config-loader",
+      "category": "multi-hunk-mod",
+      "language": "python",
+      "original": {
+        "config.py": "import os\nimport json\n\nDEFAULT_PATH = \"config.json\"\n\n\ndef load_config(path=DEFAULT_PATH):\n    with open(path) as f:\n        return json.load(f)\n\n\ndef save_config(data, path=DEFAULT_PATH):\n    with open(path, \"w\") as f:\n        json.dump(data, f)\n\n\ndef get_value(key):\n    cfg = load_config()\n    return cfg.get(key)\n"
+      },
+      "diff": "--- a/config.py\n+++ b/config.py\n@@ -7,7 +7,7 @@ DEFAULT_PATH = \"config.json\"\n \n def load_config(path=DEFAULT_PATH):\n     with open(path) as f:\n-        return json.load(f)\n+        return json.load(f) or {}\n \n \n def save_config(data, path=DEFAULT_PATH):\n@@ -16,5 +16,6 @@ def save_config(data, path=DEFAULT_PATH):\n \n \n def get_value(key):\n-    cfg = load_config()\n+    cfg = load_config(os.environ.get(\"CONFIG_PATH\", DEFAULT_PATH))\n     return cfg.get(key)\n",
+      "expected": {
+        "config.py": "import os\nimport json\n\nDEFAULT_PATH = \"config.json\"\n\n\ndef load_config(path=DEFAULT_PATH):\n    with open(path) as f:\n        return json.load(f) or {}\n\n\ndef save_config(data, path=DEFAULT_PATH):\n    with open(path, \"w\") as f:\n        json.dump(data, f)\n\n\ndef get_value(key):\n    cfg = load_config(os.environ.get(\"CONFIG_PATH\", DEFAULT_PATH))\n    return cfg.get(key)\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-vector-math",
+      "category": "multi-hunk-mod",
+      "language": "python",
+      "original": {
+        "vector.py": "import math\n\n\nclass Vector2:\n    def __init__(self, x, y):\n        self.x = x\n        self.y = y\n\n    def length(self):\n        return math.sqrt(self.x * self.x + self.y * self.y)\n\n    def add(self, other):\n        return Vector2(self.x + other.x, self.y + other.y)\n\n    def scale(self, factor):\n        return Vector2(self.x * factor, self.y * factor)\n\n    def dot(self, other):\n        return self.x * other.x + self.y * other.y\n"
+      },
+      "diff": "--- a/vector.py\n+++ b/vector.py\n@@ -7,8 +7,8 @@ class Vector2:\n         self.x = x\n         self.y = y\n \n-    def length(self):\n-        return math.sqrt(self.x * self.x + self.y * self.y)\n+    def length(self) -> float:\n+        return math.hypot(self.x, self.y)\n \n     def add(self, other):\n         return Vector2(self.x + other.x, self.y + other.y)\n@@ -17,4 +17,7 @@ class Vector2:\n         return Vector2(self.x * factor, self.y * factor)\n \n     def dot(self, other):\n         return self.x * other.x + self.y * other.y\n+\n+    def normalize(self):\n+        return self.scale(1.0 / self.length())\n",
+      "expected": {
+        "vector.py": "import math\n\n\nclass Vector2:\n    def __init__(self, x, y):\n        self.x = x\n        self.y = y\n\n    def length(self) -> float:\n        return math.hypot(self.x, self.y)\n\n    def add(self, other):\n        return Vector2(self.x + other.x, self.y + other.y)\n\n    def scale(self, factor):\n        return Vector2(self.x * factor, self.y * factor)\n\n    def dot(self, other):\n        return self.x * other.x + self.y * other.y\n\n    def normalize(self):\n        return self.scale(1.0 / self.length())\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-cli-args",
+      "category": "multi-hunk-mod",
+      "language": "python",
+      "original": {
+        "cli.py": "import argparse\nimport sys\n\n\ndef build_parser():\n    parser = argparse.ArgumentParser(description=\"My tool\")\n    parser.add_argument(\"input\")\n    parser.add_argument(\"--verbose\", action=\"store_true\")\n    return parser\n\n\ndef main(argv=None):\n    parser = build_parser()\n    args = parser.parse_args(argv)\n    if args.verbose:\n        print(\"verbose mode\")\n    print(\"processing\", args.input)\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+      },
+      "diff": "--- a/cli.py\n+++ b/cli.py\n@@ -6,6 +6,7 @@ def build_parser():\n     parser = argparse.ArgumentParser(description=\"My tool\")\n     parser.add_argument(\"input\")\n     parser.add_argument(\"--verbose\", action=\"store_true\")\n+    parser.add_argument(\"--output\", default=\"out.txt\")\n     return parser\n \n \n@@ -14,7 +15,8 @@ def main(argv=None):\n     args = parser.parse_args(argv)\n     if args.verbose:\n         print(\"verbose mode\")\n-    print(\"processing\", args.input)\n+    print(\"processing\", args.input, \"->\", args.output)\n     return 0\n \n \n",
+      "expected": {
+        "cli.py": "import argparse\nimport sys\n\n\ndef build_parser():\n    parser = argparse.ArgumentParser(description=\"My tool\")\n    parser.add_argument(\"input\")\n    parser.add_argument(\"--verbose\", action=\"store_true\")\n    parser.add_argument(\"--output\", default=\"out.txt\")\n    return parser\n\n\ndef main(argv=None):\n    parser = build_parser()\n    args = parser.parse_args(argv)\n    if args.verbose:\n        print(\"verbose mode\")\n    print(\"processing\", args.input, \"->\", args.output)\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-cache-three-hunks",
+      "category": "multi-hunk-mod",
+      "language": "python",
+      "original": {
+        "cache.py": "import time\n\n\nclass Cache:\n    def __init__(self, ttl=60):\n        self.ttl = ttl\n        self.store = {}\n\n    def get(self, key):\n        entry = self.store.get(key)\n        if entry is None:\n            return None\n        return entry[1]\n\n    def set(self, key, value):\n        self.store[key] = (time.time(), value)\n\n    def clear(self):\n        self.store = {}\n\n    def size(self):\n        return len(self.store)\n"
+      },
+      "diff": "--- a/cache.py\n+++ b/cache.py\n@@ -1,4 +1,5 @@\n import time\n+import logging\n \n \n class Cache:\n@@ -9,7 +10,9 @@ class Cache:\n     def get(self, key):\n         entry = self.store.get(key)\n         if entry is None:\n             return None\n+        if time.time() - entry[0] > self.ttl:\n+            del self.store[key]\n+            return None\n         return entry[1]\n \n     def set(self, key, value):\n@@ -18,4 +21,5 @@ class Cache:\n \n     def clear(self):\n         self.store = {}\n+        logging.info(\"cache cleared\")\n \n     def size(self):\n",
+      "expected": {
+        "cache.py": "import time\nimport logging\n\n\nclass Cache:\n    def __init__(self, ttl=60):\n        self.ttl = ttl\n        self.store = {}\n\n    def get(self, key):\n        entry = self.store.get(key)\n        if entry is None:\n            return None\n        if time.time() - entry[0] > self.ttl:\n            del self.store[key]\n            return None\n        return entry[1]\n\n    def set(self, key, value):\n        self.store[key] = (time.time(), value)\n\n    def clear(self):\n        self.store = {}\n        logging.info(\"cache cleared\")\n\n    def size(self):\n        return len(self.store)\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-string-utils",
+      "category": "multi-hunk-mod",
+      "language": "python",
+      "original": {
+        "strutils.py": "def slugify(text):\n    text = text.lower()\n    text = text.replace(\" \", \"-\")\n    return text\n\n\ndef truncate(text, length):\n    if len(text) <= length:\n        return text\n    return text[:length] + \"...\"\n\n\ndef titlecase(text):\n    return \" \".join(w.capitalize() for w in text.split())\n"
+      },
+      "diff": "--- a/strutils.py\n+++ b/strutils.py\n@@ -1,7 +1,9 @@\n+import re\n+\n+\n def slugify(text):\n     text = text.lower()\n-    text = text.replace(\" \", \"-\")\n+    text = re.sub(r\"[^a-z0-9]+\", \"-\", text).strip(\"-\")\n     return text\n \n \n@@ -9,6 +11,6 @@ def truncate(text, length):\n     if len(text) <= length:\n         return text\n-    return text[:length] + \"...\"\n+    return text[: length - 3] + \"...\"\n \n \n def titlecase(text):\n",
+      "expected": {
+        "strutils.py": "import re\n\n\ndef slugify(text):\n    text = text.lower()\n    text = re.sub(r\"[^a-z0-9]+\", \"-\", text).strip(\"-\")\n    return text\n\n\ndef truncate(text, length):\n    if len(text) <= length:\n        return text\n    return text[: length - 3] + \"...\"\n\n\ndef titlecase(text):\n    return \" \".join(w.capitalize() for w in text.split())\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-db-session",
+      "category": "multi-hunk-mod",
+      "language": "python",
+      "original": {
+        "db.py": "import sqlite3\n\n\nclass Database:\n    def __init__(self, path):\n        self.path = path\n        self.conn = None\n\n    def connect(self):\n        self.conn = sqlite3.connect(self.path)\n        return self.conn\n\n    def execute(self, query, params=()):\n        cur = self.conn.cursor()\n        cur.execute(query, params)\n        return cur.fetchall()\n\n    def close(self):\n        if self.conn:\n            self.conn.close()\n"
+      },
+      "diff": "--- a/db.py\n+++ b/db.py\n@@ -8,8 +8,9 @@ class Database:\n \n     def connect(self):\n         self.conn = sqlite3.connect(self.path)\n+        self.conn.row_factory = sqlite3.Row\n         return self.conn\n \n     def execute(self, query, params=()):\n         cur = self.conn.cursor()\n         cur.execute(query, params)\n@@ -17,5 +18,7 @@ class Database:\n \n     def close(self):\n         if self.conn:\n             self.conn.close()\n+            self.conn = None\n",
+      "expected": {
+        "db.py": "import sqlite3\n\n\nclass Database:\n    def __init__(self, path):\n        self.path = path\n        self.conn = None\n\n    def connect(self):\n        self.conn = sqlite3.connect(self.path)\n        self.conn.row_factory = sqlite3.Row\n        return self.conn\n\n    def execute(self, query, params=()):\n        cur = self.conn.cursor()\n        cur.execute(query, params)\n        return cur.fetchall()\n\n    def close(self):\n        if self.conn:\n            self.conn.close()\n            self.conn = None\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-retry-decorator",
+      "category": "multi-hunk-mod",
+      "language": "python",
+      "original": {
+        "retry.py": "import time\nimport functools\n\n\ndef retry(times=3):\n    def decorator(func):\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            for attempt in range(times):\n                try:\n                    return func(*args, **kwargs)\n                except Exception:\n                    if attempt == times - 1:\n                        raise\n        return wrapper\n    return decorator\n\n\n@retry()\ndef fetch():\n    return 42\n"
+      },
+      "diff": "--- a/retry.py\n+++ b/retry.py\n@@ -2,7 +2,7 @@ import time\n import functools\n \n \n-def retry(times=3):\n+def retry(times=3, delay=0.0):\n     def decorator(func):\n         @functools.wraps(func)\n         def wrapper(*args, **kwargs):\n@@ -11,7 +11,9 @@ def retry(times=3):\n                 try:\n                     return func(*args, **kwargs)\n                 except Exception:\n                     if attempt == times - 1:\n                         raise\n+                    time.sleep(delay)\n         return wrapper\n     return decorator\n",
+      "expected": {
+        "retry.py": "import time\nimport functools\n\n\ndef retry(times=3, delay=0.0):\n    def decorator(func):\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            for attempt in range(times):\n                try:\n                    return func(*args, **kwargs)\n                except Exception:\n                    if attempt == times - 1:\n                        raise\n                    time.sleep(delay)\n        return wrapper\n    return decorator\n\n\n@retry()\ndef fetch():\n    return 42\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-temperature-fuzzy-context",
+      "category": "multi-hunk-mod",
+      "language": "python",
+      "original": {
+        "weather.py": "def to_fahrenheit(celsius):\n    return celsius * 9 / 5 + 32\n\n\ndef to_celsius(fahrenheit):\n    return (fahrenheit - 32) * 5 / 9\n\n\ndef describe(celsius):\n    if celsius < 0:\n        return \"freezing\"\n    elif celsius < 15:\n        return \"cold\"\n    elif celsius < 25:\n        return \"mild\"\n    else:\n        return \"hot\"\n"
+      },
+      "diff": "--- a/weather.py\n+++ b/weather.py\n@@ -1,5 +1,5 @@\n def to_fahrenheit(celsius):\n-    return celsius * 9 / 5 + 32\n+    return round(celsius * 9 / 5 + 32, 1)\n \n \n def to_celsius(fahrenheit):\n@@ -9,8 +9,8 @@ def describe(celsius):\n     if celsius < 0:\n         return \"freezing\"\n     elif celsius < 10:\n         return \"cold\"\n-    elif celsius < 25:\n+    elif celsius < 22:\n         return \"mild\"\n     else:\n         return \"hot\"\n",
+      "expected": {
+        "weather.py": "def to_fahrenheit(celsius):\n    return round(celsius * 9 / 5 + 32, 1)\n\n\ndef to_celsius(fahrenheit):\n    return (fahrenheit - 32) * 5 / 9\n\n\ndef describe(celsius):\n    if celsius < 0:\n        return \"freezing\"\n    elif celsius < 15:\n        return \"cold\"\n    elif celsius < 22:\n        return \"mild\"\n    else:\n        return \"hot\"\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "multi-hunk-mod-logger-config",
+      "category": "multi-hunk-mod",
+      "language": "typescript",
+      "original": {
+        "src/logger.ts": "import { format } from \"util\";\n\nexport interface LoggerOptions {\n  level: string;\n  prefix: string;\n}\n\nconst defaultOptions: LoggerOptions = {\n  level: \"info\",\n  prefix: \"[app]\",\n};\n\nexport function createLogger(options: LoggerOptions) {\n  const opts = { ...defaultOptions, ...options };\n  return {\n    log(msg: string) {\n      console.log(format(\"%s %s\", opts.prefix, msg));\n    },\n  };\n}\n"
+      },
+      "diff": "--- a/src/logger.ts\n+++ b/src/logger.ts\n@@ -1,9 +1,10 @@\n import { format } from \"util\";\n \n export interface LoggerOptions {\n   level: string;\n   prefix: string;\n+  timestamps: boolean;\n }\n \n const defaultOptions: LoggerOptions = {\n   level: \"info\",\n@@ -11,9 +12,12 @@ const defaultOptions: LoggerOptions = {\n   prefix: \"[app]\",\n };\n \n export function createLogger(options: LoggerOptions) {\n   const opts = { ...defaultOptions, ...options };\n   return {\n     log(msg: string) {\n-      console.log(format(\"%s %s\", opts.prefix, msg));\n+      const ts = opts.timestamps ? new Date().toISOString() + \" \" : \"\";\n+      console.log(format(\"%s%s %s\", ts, opts.prefix, msg));\n     },\n   };\n }\n",
+      "expected": {
+        "src/logger.ts": "import { format } from \"util\";\n\nexport interface LoggerOptions {\n  level: string;\n  prefix: string;\n  timestamps: boolean;\n}\n\nconst defaultOptions: LoggerOptions = {\n  level: \"info\",\n  prefix: \"[app]\",\n};\n\nexport function createLogger(options: LoggerOptions) {\n  const opts = { ...defaultOptions, ...options };\n  return {\n    log(msg: string) {\n      const ts = opts.timestamps ? new Date().toISOString() + \" \" : \"\";\n      console.log(format(\"%s%s %s\", ts, opts.prefix, msg));\n    },\n  };\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-http-client",
+      "category": "multi-hunk-mod",
+      "language": "typescript",
+      "original": {
+        "lib/httpClient.ts": "export class HttpClient {\n  private baseUrl: string;\n\n  constructor(baseUrl: string) {\n    this.baseUrl = baseUrl;\n  }\n\n  async get(path: string): Promise<Response> {\n    return fetch(this.baseUrl + path);\n  }\n\n  async post(path: string, body: unknown): Promise<Response> {\n    return fetch(this.baseUrl + path, {\n      method: \"POST\",\n      body: JSON.stringify(body),\n    });\n  }\n}\n"
+      },
+      "diff": "--- a/lib/httpClient.ts\n+++ b/lib/httpClient.ts\n@@ -1,11 +1,13 @@\n export class HttpClient {\n   private baseUrl: string;\n+  private headers: Record<string, string>;\n \n-  constructor(baseUrl: string) {\n+  constructor(baseUrl: string, headers: Record<string, string> = {}) {\n     this.baseUrl = baseUrl;\n+    this.headers = headers;\n   }\n \n   async get(path: string): Promise<Response> {\n-    return fetch(this.baseUrl + path);\n+    return fetch(this.baseUrl + path, { headers: this.headers });\n   }\n \n   async post(path: string, body: unknown): Promise<Response> {\n@@ -13,6 +15,7 @@ export class HttpClient {\n     return fetch(this.baseUrl + path, {\n       method: \"POST\",\n       body: JSON.stringify(body),\n+      headers: { ...this.headers, \"Content-Type\": \"application/json\" },\n     });\n   }\n }\n",
+      "expected": {
+        "lib/httpClient.ts": "export class HttpClient {\n  private baseUrl: string;\n  private headers: Record<string, string>;\n\n  constructor(baseUrl: string, headers: Record<string, string> = {}) {\n    this.baseUrl = baseUrl;\n    this.headers = headers;\n  }\n\n  async get(path: string): Promise<Response> {\n    return fetch(this.baseUrl + path, { headers: this.headers });\n  }\n\n  async post(path: string, body: unknown): Promise<Response> {\n    return fetch(this.baseUrl + path, {\n      method: \"POST\",\n      body: JSON.stringify(body),\n      headers: { ...this.headers, \"Content-Type\": \"application/json\" },\n    });\n  }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-user-service",
+      "category": "multi-hunk-mod",
+      "language": "typescript",
+      "original": {
+        "src/services/userService.ts": "import { db } from \"../db\";\n\nexport interface User {\n  id: number;\n  name: string;\n  email: string;\n}\n\nexport async function findUser(id: number): Promise<User | null> {\n  const row = await db.query(\"SELECT * FROM users WHERE id = ?\", [id]);\n  if (!row) {\n    return null;\n  }\n  return row;\n}\n\nexport async function createUser(name: string, email: string): Promise<User> {\n  const id = await db.insert(\"users\", { name, email });\n  return { id, name, email };\n}\n\nexport async function deleteUser(id: number): Promise<void> {\n  await db.query(\"DELETE FROM users WHERE id = ?\", [id]);\n}\n"
+      },
+      "diff": "--- a/src/services/userService.ts\n+++ b/src/services/userService.ts\n@@ -2,8 +2,9 @@ import { db } from \"../db\";\n \n export interface User {\n   id: number;\n   name: string;\n   email: string;\n+  createdAt: Date;\n }\n \n export async function findUser(id: number): Promise<User | null> {\n@@ -14,9 +15,10 @@ export async function findUser(id: number): Promise<User | null> {\n   return row;\n }\n \n export async function createUser(name: string, email: string): Promise<User> {\n-  const id = await db.insert(\"users\", { name, email });\n-  return { id, name, email };\n+  const createdAt = new Date();\n+  const id = await db.insert(\"users\", { name, email, createdAt });\n+  return { id, name, email, createdAt };\n }\n \n export async function deleteUser(id: number): Promise<void> {\n",
+      "expected": {
+        "src/services/userService.ts": "import { db } from \"../db\";\n\nexport interface User {\n  id: number;\n  name: string;\n  email: string;\n  createdAt: Date;\n}\n\nexport async function findUser(id: number): Promise<User | null> {\n  const row = await db.query(\"SELECT * FROM users WHERE id = ?\", [id]);\n  if (!row) {\n    return null;\n  }\n  return row;\n}\n\nexport async function createUser(name: string, email: string): Promise<User> {\n  const createdAt = new Date();\n  const id = await db.insert(\"users\", { name, email, createdAt });\n  return { id, name, email, createdAt };\n}\n\nexport async function deleteUser(id: number): Promise<void> {\n  await db.query(\"DELETE FROM users WHERE id = ?\", [id]);\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-math-utils",
+      "category": "multi-hunk-mod",
+      "language": "typescript",
+      "original": {
+        "utils/math.ts": "export function clamp(value: number, min: number, max: number): number {\n  return Math.min(Math.max(value, min), max);\n}\n\nexport function lerp(a: number, b: number, t: number): number {\n  return a + (b - a) * t;\n}\n\nexport function sum(values: number[]): number {\n  let total = 0;\n  for (const v of values) {\n    total += v;\n  }\n  return total;\n}\n\nexport function average(values: number[]): number {\n  return sum(values) / values.length;\n}\n"
+      },
+      "diff": "--- a/utils/math.ts\n+++ b/utils/math.ts\n@@ -1,7 +1,11 @@\n export function clamp(value: number, min: number, max: number): number {\n+  if (min > max) {\n+    throw new Error(\"min cannot be greater than max\");\n+  }\n   return Math.min(Math.max(value, min), max);\n }\n \n export function lerp(a: number, b: number, t: number): number {\n+  t = clamp(t, 0, 1);\n   return a + (b - a) * t;\n }\n@@ -16,5 +20,8 @@ export function sum(values: number[]): number {\n }\n \n export function average(values: number[]): number {\n+  if (values.length === 0) {\n+    return 0;\n+  }\n   return sum(values) / values.length;\n }\n",
+      "expected": {
+        "utils/math.ts": "export function clamp(value: number, min: number, max: number): number {\n  if (min > max) {\n    throw new Error(\"min cannot be greater than max\");\n  }\n  return Math.min(Math.max(value, min), max);\n}\n\nexport function lerp(a: number, b: number, t: number): number {\n  t = clamp(t, 0, 1);\n  return a + (b - a) * t;\n}\n\nexport function sum(values: number[]): number {\n  let total = 0;\n  for (const v of values) {\n    total += v;\n  }\n  return total;\n}\n\nexport function average(values: number[]): number {\n  if (values.length === 0) {\n    return 0;\n  }\n  return sum(values) / values.length;\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-event-emitter",
+      "category": "multi-hunk-mod",
+      "language": "typescript",
+      "original": {
+        "src/events/emitter.ts": "type Listener = (...args: unknown[]) => void;\n\nexport class EventEmitter {\n  private listeners: Map<string, Listener[]> = new Map();\n\n  on(event: string, listener: Listener): void {\n    const list = this.listeners.get(event) ?? [];\n    list.push(listener);\n    this.listeners.set(event, list);\n  }\n\n  emit(event: string, ...args: unknown[]): void {\n    const list = this.listeners.get(event);\n    if (list) {\n      for (const fn of list) {\n        fn(...args);\n      }\n    }\n  }\n\n  off(event: string): void {\n    this.listeners.delete(event);\n  }\n}\n"
+      },
+      "diff": "--- a/src/events/emitter.ts\n+++ b/src/events/emitter.ts\n@@ -1,6 +1,7 @@\n type Listener = (...args: unknown[]) => void;\n \n export class EventEmitter {\n   private listeners: Map<string, Listener[]> = new Map();\n+  private maxListeners = 10;\n \n   on(event: string, listener: Listener): void {\n     const list = this.listeners.get(event) ?? [];\n+    if (list.length >= this.maxListeners) {\n+      console.warn(`Max listeners exceeded for ${event}`);\n+    }\n     list.push(listener);\n     this.listeners.set(event, list);\n   }\n@@ -19,7 +24,11 @@ export class EventEmitter {\n     }\n   }\n \n-  off(event: string): void {\n-    this.listeners.delete(event);\n+  off(event: string, listener?: Listener): void {\n+    if (!listener) {\n+      this.listeners.delete(event);\n+      return;\n+    }\n+    const list = this.listeners.get(event) ?? [];\n+    this.listeners.set(event, list.filter((l) => l !== listener));\n   }\n }\n",
+      "expected": {
+        "src/events/emitter.ts": "type Listener = (...args: unknown[]) => void;\n\nexport class EventEmitter {\n  private listeners: Map<string, Listener[]> = new Map();\n  private maxListeners = 10;\n\n  on(event: string, listener: Listener): void {\n    const list = this.listeners.get(event) ?? [];\n    if (list.length >= this.maxListeners) {\n      console.warn(`Max listeners exceeded for ${event}`);\n    }\n    list.push(listener);\n    this.listeners.set(event, list);\n  }\n\n  emit(event: string, ...args: unknown[]): void {\n    const list = this.listeners.get(event);\n    if (list) {\n      for (const fn of list) {\n        fn(...args);\n      }\n    }\n  }\n\n  off(event: string, listener?: Listener): void {\n    if (!listener) {\n      this.listeners.delete(event);\n      return;\n    }\n    const list = this.listeners.get(event) ?? [];\n    this.listeners.set(event, list.filter((l) => l !== listener));\n  }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-cache-store",
+      "category": "multi-hunk-mod",
+      "language": "typescript",
+      "original": {
+        "lib/cache.ts": "export class Cache<T> {\n  private store = new Map<string, T>();\n\n  get(key: string): T | undefined {\n    return this.store.get(key);\n  }\n\n  set(key: string, value: T): void {\n    this.store.set(key, value);\n  }\n\n  has(key: string): boolean {\n    return this.store.has(key);\n  }\n\n  clear(): void {\n    this.store.clear();\n  }\n\n  get size(): number {\n    return this.store.size;\n  }\n}\n"
+      },
+      "diff": "--- a/lib/cache.ts\n+++ b/lib/cache.ts\n@@ -1,9 +1,14 @@\n export class Cache<T> {\n   private store = new Map<string, T>();\n+  private hits = 0;\n+  private misses = 0;\n \n   get(key: string): T | undefined {\n-    return this.store.get(key);\n+    const value = this.store.get(key);\n+    if (value === undefined) {\n+      this.misses++;\n+    } else {\n+      this.hits++;\n+    }\n+    return value;\n   }\n \n   set(key: string, value: T): void {\n@@ -17,7 +22,11 @@ export class Cache<T> {\n   clear(): void {\n     this.store.clear();\n+    this.hits = 0;\n+    this.misses = 0;\n   }\n \n   get size(): number {\n     return this.store.size;\n   }\n+\n+  get hitRate(): number {\n+    const total = this.hits + this.misses;\n+    return total === 0 ? 0 : this.hits / total;\n+  }\n }\n",
+      "expected": {
+        "lib/cache.ts": "export class Cache<T> {\n  private store = new Map<string, T>();\n  private hits = 0;\n  private misses = 0;\n\n  get(key: string): T | undefined {\n    const value = this.store.get(key);\n    if (value === undefined) {\n      this.misses++;\n    } else {\n      this.hits++;\n    }\n    return value;\n  }\n\n  set(key: string, value: T): void {\n    this.store.set(key, value);\n  }\n\n  has(key: string): boolean {\n    return this.store.has(key);\n  }\n\n  clear(): void {\n    this.store.clear();\n    this.hits = 0;\n    this.misses = 0;\n  }\n\n  get size(): number {\n    return this.store.size;\n  }\n\n  get hitRate(): number {\n    const total = this.hits + this.misses;\n    return total === 0 ? 0 : this.hits / total;\n  }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-hunk-mod-router-context-drift",
+      "category": "multi-hunk-mod",
+      "language": "typescript",
+      "original": {
+        "src/router.ts": "import { Request, Response } from \"./types\";\n\ntype Handler = (req: Request, res: Response) => void;\n\nexport class Router {\n  private routes: Map<string, Handler> = new Map();\n\n  register(path: string, handler: Handler): void {\n    this.routes.set(path, handler);\n  }\n\n  dispatch(path: string, req: Request, res: Response): void {\n    const handler = this.routes.get(path);\n    if (handler) {\n      handler(req, res);\n    } else {\n      res.status(404).send(\"Not Found\");\n    }\n  }\n}\n"
+      },
+      "diff": "--- a/src/router.ts\n+++ b/src/router.ts\n@@ -1,7 +1,8 @@\n import { Request, Response } from \"./types\";\n \n type Handler = (req: Request, res: Response) => void;\n \n export class Router {\n   private routes: Map<string, Handler> = new Map();\n+  private middleware: Handler[] = [];\n \n   register(path: string, handler: Handler): void {\n@@ -10,8 +11,11 @@ export class Router {\n   dispatch(path: string, req: Response, res: Response): void {\n     const handler = this.routes.get(path);\n+    for (const mw of this.middleware) {\n+      mw(req, res);\n+    }\n     if (handler) {\n       handler(req, res);\n     } else {\n       res.status(404).send(\"Not Found\");\n     }\n   }\n }\n",
+      "expected": {
+        "src/router.ts": "import { Request, Response } from \"./types\";\n\ntype Handler = (req: Request, res: Response) => void;\n\nexport class Router {\n  private routes: Map<string, Handler> = new Map();\n\n  register(path: string, handler: Handler): void {\n    this.routes.set(path, handler);\n  }\n\n  dispatch(path: string, req: Request, res: Response): void {\n    const handler = this.routes.get(path);\n    if (handler) {\n      handler(req, res);\n    } else {\n      res.status(404).send(\"Not Found\");\n    }\n  }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "new-file-creation-simple-util",
+      "category": "new-file-creation",
+      "language": "javascript",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/src/utils/slugify.js\n@@ -0,0 +1,8 @@\n+export function slugify(text) {\n+  return text\n+    .toString()\n+    .toLowerCase()\n+    .trim()\n+    .replace(/[^a-z0-9]+/g, '-')\n+    .replace(/^-+|-+$/g, '');\n+}\n",
+      "expected": {
+        "src/utils/slugify.js": "export function slugify(text) {\n  return text\n    .toString()\n    .toLowerCase()\n    .trim()\n    .replace(/[^a-z0-9]+/g, '-')\n    .replace(/^-+|-+$/g, '');\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-express-route",
+      "category": "new-file-creation",
+      "language": "javascript",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/routes/health.js\n@@ -0,0 +1,11 @@\n+const express = require('express');\n+const router = express.Router();\n+\n+router.get('/health', (req, res) => {\n+  res.status(200).json({\n+    status: 'ok',\n+    uptime: process.uptime(),\n+  });\n+});\n+\n+module.exports = router;\n",
+      "expected": {
+        "routes/health.js": "const express = require('express');\nconst router = express.Router();\n\nrouter.get('/health', (req, res) => {\n  res.status(200).json({\n    status: 'ok',\n    uptime: process.uptime(),\n  });\n});\n\nmodule.exports = router;\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-react-component",
+      "category": "new-file-creation",
+      "language": "javascript",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/components/Counter.jsx\n@@ -0,0 +1,16 @@\n+import React, { useState } from 'react';\n+\n+export default function Counter({ initial = 0 }) {\n+  const [count, setCount] = useState(initial);\n+\n+  return (\n+    <div className=\"counter\">\n+      <button onClick={() => setCount(count - 1)}>-</button>\n+      <span>{count}</span>\n+      <button onClick={() => setCount(count + 1)}>+</button>\n+    </div>\n+  );\n+}\n",
+      "expected": {
+        "components/Counter.jsx": "import React, { useState } from 'react';\n\nexport default function Counter({ initial = 0 }) {\n  const [count, setCount] = useState(initial);\n\n  return (\n    <div className=\"counter\">\n      <button onClick={() => setCount(count - 1)}>-</button>\n      <span>{count}</span>\n      <button onClick={() => setCount(count + 1)}>+</button>\n    </div>\n  );\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-no-trailing-newline",
+      "category": "new-file-creation",
+      "language": "javascript",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/config/constants.js\n@@ -0,0 +1,4 @@\n+export const MAX_RETRIES = 3;\n+export const TIMEOUT_MS = 5000;\n+export const BASE_URL = 'https://api.example.com';\n+export const VERSION = '1.0.0';\n\\ No newline at end of file\n",
+      "expected": {
+        "config/constants.js": "export const MAX_RETRIES = 3;\nexport const TIMEOUT_MS = 5000;\nexport const BASE_URL = 'https://api.example.com';\nexport const VERSION = '1.0.0';"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-async-fetch",
+      "category": "new-file-creation",
+      "language": "javascript",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/lib/api/fetchUser.js\n@@ -0,0 +1,13 @@\n+export async function fetchUser(id) {\n+  const res = await fetch(`/api/users/${id}`);\n+  if (!res.ok) {\n+    throw new Error(`Failed to fetch user ${id}: ${res.status}`);\n+  }\n+  return res.json();\n+}\n+\n+export async function fetchAllUsers() {\n+  const res = await fetch('/api/users');\n+  return res.json();\n+}\n",
+      "expected": {
+        "lib/api/fetchUser.js": "export async function fetchUser(id) {\n  const res = await fetch(`/api/users/${id}`);\n  if (!res.ok) {\n    throw new Error(`Failed to fetch user ${id}: ${res.status}`);\n  }\n  return res.json();\n}\n\nexport async function fetchAllUsers() {\n  const res = await fetch('/api/users');\n  return res.json();\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-jest-test",
+      "category": "new-file-creation",
+      "language": "javascript",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/tests/sum.test.js\n@@ -0,0 +1,15 @@\n+const { sum } = require('../src/sum');\n+\n+describe('sum', () => {\n+  it('adds two positive numbers', () => {\n+    expect(sum(2, 3)).toBe(5);\n+  });\n+\n+  it('handles negative numbers', () => {\n+    expect(sum(-1, -1)).toBe(-2);\n+  });\n+\n+  it('returns zero for empty args', () => {\n+    expect(sum()).toBe(0);\n+  });\n+});\n",
+      "expected": {
+        "tests/sum.test.js": "const { sum } = require('../src/sum');\n\ndescribe('sum', () => {\n  it('adds two positive numbers', () => {\n    expect(sum(2, 3)).toBe(5);\n  });\n\n  it('handles negative numbers', () => {\n    expect(sum(-1, -1)).toBe(-2);\n  });\n\n  it('returns zero for empty args', () => {\n    expect(sum()).toBe(0);\n  });\n});\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-wrong-linecount-fallback",
+      "category": "new-file-creation",
+      "language": "javascript",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/src/eventBus.js\n@@ -0,0 +1,3 @@\n+const listeners = {};\n+\n+export function on(event, cb) {\n+  (listeners[event] = listeners[event] || []).push(cb);\n+}\n+\n+export function emit(event, payload) {\n+  (listeners[event] || []).forEach((cb) => cb(payload));\n+}\n",
+      "expected": {
+        "src/eventBus.js": "const listeners = {};\n\nexport function on(event, cb) {\n  (listeners[event] = listeners[event] || []).push(cb);\n}\n\nexport function emit(event, payload) {\n  (listeners[event] || []).forEach((cb) => cb(payload));\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "new-file-creation-class-module",
+      "category": "new-file-creation",
+      "language": "javascript",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/src/models/Stack.js\n@@ -0,0 +1,22 @@\n+class Stack {\n+  constructor() {\n+    this.items = [];\n+  }\n+\n+  push(item) {\n+    this.items.push(item);\n+    return this;\n+  }\n+\n+  pop() {\n+    return this.items.pop();\n+  }\n+\n+  peek() {\n+    return this.items[this.items.length - 1];\n+  }\n+\n+  get size() {\n+    return this.items.length;\n+  }\n+}\n+\n+module.exports = Stack;\n",
+      "expected": {
+        "src/models/Stack.js": "class Stack {\n  constructor() {\n    this.items = [];\n  }\n\n  push(item) {\n    this.items.push(item);\n    return this;\n  }\n\n  pop() {\n    return this.items.pop();\n  }\n\n  peek() {\n    return this.items[this.items.length - 1];\n  }\n\n  get size() {\n    return this.items.length;\n  }\n}\n\nmodule.exports = Stack;\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-package-json",
+      "category": "new-file-creation",
+      "language": "json",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/package.json\n@@ -0,0 +1,18 @@\n+{\n+  \"name\": \"gptdiff-js\",\n+  \"version\": \"1.0.0\",\n+  \"description\": \"Browser-first generateDiff + smartapply\",\n+  \"main\": \"dist/index.js\",\n+  \"type\": \"module\",\n+  \"scripts\": {\n+    \"build\": \"rollup -c\",\n+    \"test\": \"vitest run\"\n+  },\n+  \"keywords\": [\n+    \"diff\",\n+    \"patch\"\n+  ],\n+  \"author\": \"255bits\",\n+  \"license\": \"MIT\"\n+}\n",
+      "expected": {
+        "package.json": "{\n  \"name\": \"gptdiff-js\",\n  \"version\": \"1.0.0\",\n  \"description\": \"Browser-first generateDiff + smartapply\",\n  \"main\": \"dist/index.js\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"build\": \"rollup -c\",\n    \"test\": \"vitest run\"\n  },\n  \"keywords\": [\n    \"diff\",\n    \"patch\"\n  ],\n  \"author\": \"255bits\",\n  \"license\": \"MIT\"\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-tsconfig",
+      "category": "new-file-creation",
+      "language": "json",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/tsconfig.json\n@@ -0,0 +1,16 @@\n+{\n+  \"compilerOptions\": {\n+    \"target\": \"ES2020\",\n+    \"module\": \"ESNext\",\n+    \"moduleResolution\": \"bundler\",\n+    \"strict\": true,\n+    \"esModuleInterop\": true,\n+    \"skipLibCheck\": true,\n+    \"declaration\": true,\n+    \"outDir\": \"./dist\",\n+    \"rootDir\": \"./src\"\n+  },\n+  \"include\": [\"src/**/*\"],\n+  \"exclude\": [\"node_modules\", \"dist\"]\n+}\n",
+      "expected": {
+        "tsconfig.json": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2020\",\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"bundler\",\n    \"strict\": true,\n    \"esModuleInterop\": true,\n    \"skipLibCheck\": true,\n    \"declaration\": true,\n    \"outDir\": \"./dist\",\n    \"rootDir\": \"./src\"\n  },\n  \"include\": [\"src/**/*\"],\n  \"exclude\": [\"node_modules\", \"dist\"]\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-eslintrc",
+      "category": "new-file-creation",
+      "language": "json",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/.eslintrc.json\n@@ -0,0 +1,20 @@\n+{\n+  \"root\": true,\n+  \"env\": {\n+    \"browser\": true,\n+    \"es2021\": true,\n+    \"node\": true\n+  },\n+  \"extends\": [\n+    \"eslint:recommended\"\n+  ],\n+  \"parserOptions\": {\n+    \"ecmaVersion\": 2021,\n+    \"sourceType\": \"module\"\n+  },\n+  \"rules\": {\n+    \"no-unused-vars\": \"warn\",\n+    \"semi\": [\"error\", \"always\"]\n+  }\n+}\n",
+      "expected": {
+        ".eslintrc.json": "{\n  \"root\": true,\n  \"env\": {\n    \"browser\": true,\n    \"es2021\": true,\n    \"node\": true\n  },\n  \"extends\": [\n    \"eslint:recommended\"\n  ],\n  \"parserOptions\": {\n    \"ecmaVersion\": 2021,\n    \"sourceType\": \"module\"\n  },\n  \"rules\": {\n    \"no-unused-vars\": \"warn\",\n    \"semi\": [\"error\", \"always\"]\n  }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-i18n-locale",
+      "category": "new-file-creation",
+      "language": "json",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/src/locales/en.json\n@@ -0,0 +1,15 @@\n+{\n+  \"app\": {\n+    \"title\": \"Diff Viewer\",\n+    \"subtitle\": \"Apply patches in your browser\"\n+  },\n+  \"buttons\": {\n+    \"apply\": \"Apply\",\n+    \"reset\": \"Reset\",\n+    \"copy\": \"Copy to clipboard\"\n+  },\n+  \"errors\": {\n+    \"parse\": \"Could not parse the diff\"\n+  }\n+}\n",
+      "expected": {
+        "src/locales/en.json": "{\n  \"app\": {\n    \"title\": \"Diff Viewer\",\n    \"subtitle\": \"Apply patches in your browser\"\n  },\n  \"buttons\": {\n    \"apply\": \"Apply\",\n    \"reset\": \"Reset\",\n    \"copy\": \"Copy to clipboard\"\n  },\n  \"errors\": {\n    \"parse\": \"Could not parse the diff\"\n  }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-vscode-settings",
+      "category": "new-file-creation",
+      "language": "json",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/.vscode/settings.json\n@@ -0,0 +1,10 @@\n+{\n+  \"editor.formatOnSave\": true,\n+  \"editor.tabSize\": 2,\n+  \"editor.defaultFormatter\": \"esbenp.prettier-vscode\",\n+  \"files.exclude\": {\n+    \"**/.git\": true,\n+    \"**/node_modules\": true\n+  },\n+  \"typescript.tsdk\": \"node_modules/typescript/lib\"\n+}\n",
+      "expected": {
+        ".vscode/settings.json": "{\n  \"editor.formatOnSave\": true,\n  \"editor.tabSize\": 2,\n  \"editor.defaultFormatter\": \"esbenp.prettier-vscode\",\n  \"files.exclude\": {\n    \"**/.git\": true,\n    \"**/node_modules\": true\n  },\n  \"typescript.tsdk\": \"node_modules/typescript/lib\"\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-feature-flags",
+      "category": "new-file-creation",
+      "language": "json",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/config/feature-flags.json\n@@ -0,0 +1,14 @@\n+{\n+  \"flags\": [\n+    {\n+      \"key\": \"fuzzy-apply\",\n+      \"enabled\": true,\n+      \"rollout\": 100\n+    },\n+    {\n+      \"key\": \"llm-fallback\",\n+      \"enabled\": false,\n+      \"rollout\": 0\n+    }\n+  ]\n+}\n",
+      "expected": {
+        "config/feature-flags.json": "{\n  \"flags\": [\n    {\n      \"key\": \"fuzzy-apply\",\n      \"enabled\": true,\n      \"rollout\": 100\n    },\n    {\n      \"key\": \"llm-fallback\",\n      \"enabled\": false,\n      \"rollout\": 0\n    }\n  ]\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-prettierrc-noeol",
+      "category": "new-file-creation",
+      "language": "json",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/.prettierrc.json\n@@ -0,0 +1,7 @@\n+{\n+  \"printWidth\": 100,\n+  \"singleQuote\": true,\n+  \"trailingComma\": \"all\",\n+  \"semi\": true,\n+  \"tabWidth\": 2\n+}\n\\ No newline at end of file\n",
+      "expected": {
+        ".prettierrc.json": "{\n  \"printWidth\": 100,\n  \"singleQuote\": true,\n  \"trailingComma\": \"all\",\n  \"semi\": true,\n  \"tabWidth\": 2\n}"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "new-file-creation-manifest-malformed-header",
+      "category": "new-file-creation",
+      "language": "json",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/public/manifest.json\n@@ -0,0 +0,11 @@\n+{\n+  \"name\": \"GPTDiff\",\n+  \"short_name\": \"GPTDiff\",\n+  \"start_url\": \"/\",\n+  \"display\": \"standalone\",\n+  \"background_color\": \"#ffffff\",\n+  \"theme_color\": \"#0d1117\",\n+  \"icons\": [\n+    { \"src\": \"/icon-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\" }\n+  ]\n+}\n",
+      "expected": {
+        "public/manifest.json": "{\n  \"name\": \"GPTDiff\",\n  \"short_name\": \"GPTDiff\",\n  \"start_url\": \"/\",\n  \"display\": \"standalone\",\n  \"background_color\": \"#ffffff\",\n  \"theme_color\": \"#0d1117\",\n  \"icons\": [\n    { \"src\": \"/icon-192.png\", \"sizes\": \"192x192\", \"type\": \"image/png\" }\n  ]\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "file-deletion-legacy-utils",
+      "category": "file-deletion",
+      "language": "python",
+      "original": {
+        "utils/legacy.py": "import os\n\n\ndef read_config(path):\n    with open(path) as f:\n        return f.read()\n\n\ndef deprecated_helper(x):\n    return x * 2\n"
+      },
+      "diff": "--- a/utils/legacy.py\n+++ /dev/null\n@@ -1,10 +0,0 @@\n-import os\n-\n-\n-def read_config(path):\n-    with open(path) as f:\n-        return f.read()\n-\n-\n-def deprecated_helper(x):\n-    return x * 2\n",
+      "expected": {},
+      "deletedPaths": [
+        "utils/legacy.py"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "file-deletion-old-migration",
+      "category": "file-deletion",
+      "language": "python",
+      "original": {
+        "migrations/0001_initial.py": "from django.db import migrations, models\n\n\nclass Migration(migrations.Migration):\n    initial = True\n    dependencies = []\n    operations = [\n        migrations.CreateModel(\n            name='User',\n            fields=[\n                ('id', models.AutoField(primary_key=True)),\n                ('name', models.CharField(max_length=100)),\n            ],\n        ),\n    ]\n",
+        "src/app.py": "def main():\n    print('hello')\n"
+      },
+      "diff": "--- a/migrations/0001_initial.py\n+++ /dev/null\n@@ -1,16 +0,0 @@\n-from django.db import migrations, models\n-\n-\n-class Migration(migrations.Migration):\n-    initial = True\n-    dependencies = []\n-    operations = [\n-        migrations.CreateModel(\n-            name='User',\n-            fields=[\n-                ('id', models.AutoField(primary_key=True)),\n-                ('name', models.CharField(max_length=100)),\n-            ],\n-        ),\n-    ]\n",
+      "expected": {
+        "src/app.py": "def main():\n    print('hello')\n"
+      },
+      "deletedPaths": [
+        "migrations/0001_initial.py"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "file-deletion-test-module",
+      "category": "file-deletion",
+      "language": "python",
+      "original": {
+        "tests/test_parser.py": "import pytest\nfrom parser import parse\n\n\ndef test_parse_empty():\n    assert parse('') == []\n\n\ndef test_parse_single():\n    assert parse('a') == ['a']\n\n\n@pytest.mark.skip\ndef test_parse_broken():\n    assert parse(None) == []\n"
+      },
+      "diff": "--- a/tests/test_parser.py\n+++ /dev/null\n@@ -1,14 +0,0 @@\n-import pytest\n-from parser import parse\n-\n-\n-def test_parse_empty():\n-    assert parse('') == []\n-\n-\n-def test_parse_single():\n-    assert parse('a') == ['a']\n-\n-\n-@pytest.mark.skip\n-def test_parse_broken():\n-    assert parse(None) == []\n",
+      "expected": {},
+      "deletedPaths": [
+        "tests/test_parser.py"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "file-deletion-init-empty",
+      "category": "file-deletion",
+      "language": "python",
+      "original": {
+        "pkg/__init__.py": "",
+        "pkg/core.py": "VERSION = '1.0.0'\n"
+      },
+      "diff": "--- a/pkg/__init__.py\n+++ /dev/null\n@@ -0,0 +0,0 @@\n",
+      "expected": {
+        "pkg/core.py": "VERSION = '1.0.0'\n"
+      },
+      "deletedPaths": [
+        "pkg/__init__.py"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "file-deletion-no-trailing-newline",
+      "category": "file-deletion",
+      "language": "python",
+      "original": {
+        "scripts/cleanup.py": "import shutil\nimport sys\n\n\ndef purge(dirpath):\n    shutil.rmtree(dirpath, ignore_errors=True)\n\n\nif __name__ == '__main__':\n    purge(sys.argv[1])"
+      },
+      "diff": "--- a/scripts/cleanup.py\n+++ /dev/null\n@@ -1,10 +0,0 @@\n-import shutil\n-import sys\n-\n-\n-def purge(dirpath):\n-    shutil.rmtree(dirpath, ignore_errors=True)\n-\n-\n-if __name__ == '__main__':\n-    purge(sys.argv[1])\n\\ No newline at end of file\n",
+      "expected": {},
+      "deletedPaths": [
+        "scripts/cleanup.py"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "file-deletion-with-git-headers",
+      "category": "file-deletion",
+      "language": "python",
+      "original": {
+        "api/v1/deprecated.py": "from flask import Blueprint, jsonify\n\nbp = Blueprint('deprecated', __name__)\n\n\n@bp.route('/old-endpoint')\ndef old_endpoint():\n    return jsonify({'status': 'gone'}), 410\n",
+        "api/v1/active.py": "from flask import Blueprint\n\nbp = Blueprint('active', __name__)\n"
+      },
+      "diff": "diff --git a/api/v1/deprecated.py b/api/v1/deprecated.py\ndeleted file mode 100644\nindex 1a2b3c4..0000000\n--- a/api/v1/deprecated.py\n+++ /dev/null\n@@ -1,8 +0,0 @@\n-from flask import Blueprint, jsonify\n-\n-bp = Blueprint('deprecated', __name__)\n-\n-\n-@bp.route('/old-endpoint')\n-def old_endpoint():\n-    return jsonify({'status': 'gone'}), 410\n",
+      "expected": {
+        "api/v1/active.py": "from flask import Blueprint\n\nbp = Blueprint('active', __name__)\n"
+      },
+      "deletedPaths": [
+        "api/v1/deprecated.py"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "file-deletion-multi-file-mixed",
+      "category": "file-deletion",
+      "language": "python",
+      "original": {
+        "models/old_user.py": "class OldUser:\n    def __init__(self, name):\n        self.name = name\n\n    def greet(self):\n        return f'Hi {self.name}'\n",
+        "models/order.py": "class Order:\n    def __init__(self, total):\n        self.total = total\n"
+      },
+      "diff": "diff --git a/models/old_user.py b/models/old_user.py\ndeleted file mode 100644\nindex abc1234..0000000\n--- a/models/old_user.py\n+++ /dev/null\n@@ -1,6 +0,0 @@\n-class OldUser:\n-    def __init__(self, name):\n-        self.name = name\n-\n-    def greet(self):\n-        return f'Hi {self.name}'\ndiff --git a/models/order.py b/models/order.py\nindex def5678..ef67890 100644\n--- a/models/order.py\n+++ b/models/order.py\n@@ -1,3 +1,5 @@\n class Order:\n     def __init__(self, total):\n         self.total = total\n+\n+    def discount(self, pct):\n+        return self.total * (1 - pct)\n",
+      "expected": {
+        "models/order.py": "class Order:\n    def __init__(self, total):\n        self.total = total\n\n    def discount(self, pct):\n        return self.total * (1 - pct)\n"
+      },
+      "deletedPaths": [
+        "models/old_user.py"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "file-deletion-context-mismatch-fallback",
+      "category": "file-deletion",
+      "language": "python",
+      "original": {
+        "handlers/webhook.py": "import json\nimport logging\n\nlogger = logging.getLogger(__name__)\n\n\ndef handle(payload):\n    data = json.loads(payload)\n    logger.info('received %s', data)\n    return data\n"
+      },
+      "diff": "--- a/handlers/webhook.py\n+++ /dev/null\n@@ -1,9 +0,0 @@\n-import json\n-import logging\n-\n-logger = logging.getLogger('webhook')\n-\n-\n-def handle(payload):\n-    data = json.loads(payload)\n-    logger.debug('received %s', data)\n-    return data\n",
+      "expected": {},
+      "deletedPaths": [
+        "handlers/webhook.py"
+      ],
+      "expectFallback": true
+    },
+    {
+      "name": "multi-file-config-and-loader",
+      "category": "multi-file",
+      "language": "mixed",
+      "original": {
+        "src/config.js": "export const config = {\n  port: 3000,\n  host: 'localhost',\n};\n",
+        "src/loader.js": "import { config } from './config.js';\n\nexport function start() {\n  console.log(`Listening on ${config.host}:${config.port}`);\n}\n"
+      },
+      "diff": "--- a/src/config.js\n+++ b/src/config.js\n@@ -1,4 +1,5 @@\n export const config = {\n   port: 3000,\n   host: 'localhost',\n+  timeout: 5000,\n };\n--- a/src/loader.js\n+++ b/src/loader.js\n@@ -1,5 +1,5 @@\n import { config } from './config.js';\n \n export function start() {\n-  console.log(`Listening on ${config.host}:${config.port}`);\n+  console.log(`Listening on ${config.host}:${config.port} (timeout ${config.timeout})`);\n }\n",
+      "expected": {
+        "src/config.js": "export const config = {\n  port: 3000,\n  host: 'localhost',\n  timeout: 5000,\n};\n",
+        "src/loader.js": "import { config } from './config.js';\n\nexport function start() {\n  console.log(`Listening on ${config.host}:${config.port} (timeout ${config.timeout})`);\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-file-py-model-and-view",
+      "category": "multi-file",
+      "language": "mixed",
+      "original": {
+        "app/models.py": "class User:\n    def __init__(self, name):\n        self.name = name\n\n    def greet(self):\n        return f\"Hi, {self.name}\"\n",
+        "app/views.py": "from app.models import User\n\n\ndef index(name):\n    user = User(name)\n    return user.greet()\n"
+      },
+      "diff": "--- a/app/models.py\n+++ b/app/models.py\n@@ -1,6 +1,10 @@\n class User:\n-    def __init__(self, name):\n+    def __init__(self, name, email=None):\n         self.name = name\n+        self.email = email\n \n     def greet(self):\n         return f\"Hi, {self.name}\"\n+\n+    def contact(self):\n+        return self.email or \"no-email\"\n--- a/app/views.py\n+++ b/app/views.py\n@@ -1,7 +1,7 @@\n from app.models import User\n \n \n-def index(name):\n-    user = User(name)\n-    return user.greet()\n+def index(name, email):\n+    user = User(name, email)\n+    return f\"{user.greet()} ({user.contact()})\"\n",
+      "expected": {
+        "app/models.py": "class User:\n    def __init__(self, name, email=None):\n        self.name = name\n        self.email = email\n\n    def greet(self):\n        return f\"Hi, {self.name}\"\n\n    def contact(self):\n        return self.email or \"no-email\"\n",
+        "app/views.py": "from app.models import User\n\n\ndef index(name, email):\n    user = User(name, email)\n    return f\"{user.greet()} ({user.contact()})\"\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-file-create-test-and-edit-src",
+      "category": "multi-file",
+      "language": "mixed",
+      "original": {
+        "lib/math.js": "export function add(a, b) {\n  return a + b;\n}\n"
+      },
+      "diff": "--- a/lib/math.js\n+++ b/lib/math.js\n@@ -1,3 +1,7 @@\n export function add(a, b) {\n   return a + b;\n }\n+\n+export function sub(a, b) {\n+  return a - b;\n+}\n--- /dev/null\n+++ b/lib/math.test.js\n@@ -0,0 +1,6 @@\n+import { add, sub } from './math.js';\n+\n+test('add', () => expect(add(2, 3)).toBe(5));\n+test('sub', () => expect(sub(5, 2)).toBe(3));\n",
+      "expected": {
+        "lib/math.js": "export function add(a, b) {\n  return a + b;\n}\n\nexport function sub(a, b) {\n  return a - b;\n}\n",
+        "lib/math.test.js": "import { add, sub } from './math.js';\n\ntest('add', () => expect(add(2, 3)).toBe(5));\ntest('sub', () => expect(sub(5, 2)).toBe(3));\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-file-delete-legacy-and-update-index",
+      "category": "multi-file",
+      "language": "mixed",
+      "original": {
+        "src/index.js": "import { legacyHelper } from './legacy.js';\nimport { newHelper } from './helper.js';\n\nexport function run() {\n  legacyHelper();\n  newHelper();\n}\n",
+        "src/legacy.js": "export function legacyHelper() {\n  console.log('legacy');\n}\n",
+        "src/helper.js": "export function newHelper() {\n  console.log('new');\n}\n"
+      },
+      "diff": "--- a/src/index.js\n+++ b/src/index.js\n@@ -1,7 +1,5 @@\n-import { legacyHelper } from './legacy.js';\n import { newHelper } from './helper.js';\n \n export function run() {\n-  legacyHelper();\n   newHelper();\n }\n--- a/src/legacy.js\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-export function legacyHelper() {\n-  console.log('legacy');\n-}\n",
+      "expected": {
+        "src/index.js": "import { newHelper } from './helper.js';\n\nexport function run() {\n  newHelper();\n}\n",
+        "src/helper.js": "export function newHelper() {\n  console.log('new');\n}\n"
+      },
+      "deletedPaths": [
+        "src/legacy.js"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-file-css-html-three-files",
+      "category": "multi-file",
+      "language": "mixed",
+      "original": {
+        "index.html": "<!DOCTYPE html>\n<html>\n<head>\n  <link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n  <h1 class=\"title\">Hello</h1>\n</body>\n</html>\n",
+        "style.css": ".title {\n  color: black;\n}\n",
+        "app.js": "document.querySelector('.title').textContent = 'Hello';\n"
+      },
+      "diff": "--- a/index.html\n+++ b/index.html\n@@ -4,6 +4,6 @@\n   <link rel=\"stylesheet\" href=\"style.css\">\n </head>\n <body>\n-  <h1 class=\"title\">Hello</h1>\n+  <h1 class=\"title\" id=\"main\">Hello</h1>\n </body>\n </html>\n--- a/style.css\n+++ b/style.css\n@@ -1,3 +1,4 @@\n .title {\n   color: black;\n+  font-weight: bold;\n }\n--- a/app.js\n+++ b/app.js\n@@ -1 +1 @@\n-document.querySelector('.title').textContent = 'Hello';\n+document.querySelector('#main').textContent = 'Hello World';\n",
+      "expected": {
+        "index.html": "<!DOCTYPE html>\n<html>\n<head>\n  <link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n  <h1 class=\"title\" id=\"main\">Hello</h1>\n</body>\n</html>\n",
+        "style.css": ".title {\n  color: black;\n  font-weight: bold;\n}\n",
+        "app.js": "document.querySelector('#main').textContent = 'Hello World';\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-file-go-handler-and-router",
+      "category": "multi-file",
+      "language": "mixed",
+      "original": {
+        "handler.go": "package main\n\nimport \"net/http\"\n\nfunc HealthHandler(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(http.StatusOK)\n\tw.Write([]byte(\"ok\"))\n}\n",
+        "router.go": "package main\n\nimport \"net/http\"\n\nfunc NewRouter() *http.ServeMux {\n\tmux := http.NewServeMux()\n\tmux.HandleFunc(\"/health\", HealthHandler)\n\treturn mux\n}\n"
+      },
+      "diff": "--- a/handler.go\n+++ b/handler.go\n@@ -6,3 +6,8 @@ func HealthHandler(w http.ResponseWriter, r *http.Request) {\n \tw.WriteHeader(http.StatusOK)\n \tw.Write([]byte(\"ok\"))\n }\n+\n+func VersionHandler(w http.ResponseWriter, r *http.Request) {\n+\tw.WriteHeader(http.StatusOK)\n+\tw.Write([]byte(\"v1.2.0\"))\n+}\n--- a/router.go\n+++ b/router.go\n@@ -5,5 +5,6 @@ import \"net/http\"\n func NewRouter() *http.ServeMux {\n \tmux := http.NewServeMux()\n \tmux.HandleFunc(\"/health\", HealthHandler)\n+\tmux.HandleFunc(\"/version\", VersionHandler)\n \treturn mux\n }\n",
+      "expected": {
+        "handler.go": "package main\n\nimport \"net/http\"\n\nfunc HealthHandler(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(http.StatusOK)\n\tw.Write([]byte(\"ok\"))\n}\n\nfunc VersionHandler(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(http.StatusOK)\n\tw.Write([]byte(\"v1.2.0\"))\n}\n",
+        "router.go": "package main\n\nimport \"net/http\"\n\nfunc NewRouter() *http.ServeMux {\n\tmux := http.NewServeMux()\n\tmux.HandleFunc(\"/health\", HealthHandler)\n\tmux.HandleFunc(\"/version\", VersionHandler)\n\treturn mux\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-file-json-and-readme",
+      "category": "multi-file",
+      "language": "mixed",
+      "original": {
+        "package.json": "{\n  \"name\": \"widget\",\n  \"version\": \"1.0.0\",\n  \"scripts\": {\n    \"build\": \"tsc\"\n  }\n}\n",
+        "README.md": "# Widget\n\nA small widget library.\n\n## Usage\n\nRun `npm run build`.\n"
+      },
+      "diff": "--- a/package.json\n+++ b/package.json\n@@ -1,7 +1,8 @@\n {\n   \"name\": \"widget\",\n-  \"version\": \"1.0.0\",\n+  \"version\": \"1.1.0\",\n   \"scripts\": {\n-    \"build\": \"tsc\"\n+    \"build\": \"tsc\",\n+    \"test\": \"vitest\"\n   }\n }\n--- a/README.md\n+++ b/README.md\n@@ -4,4 +4,8 @@ A small widget library.\n \n ## Usage\n \n Run `npm run build`.\n+\n+## Testing\n+\n+Run `npm test`.\n",
+      "expected": {
+        "package.json": "{\n  \"name\": \"widget\",\n  \"version\": \"1.1.0\",\n  \"scripts\": {\n    \"build\": \"tsc\",\n    \"test\": \"vitest\"\n  }\n}\n",
+        "README.md": "# Widget\n\nA small widget library.\n\n## Usage\n\nRun `npm run build`.\n\n## Testing\n\nRun `npm test`.\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "multi-file-ts-context-mismatch-fallback",
+      "category": "multi-file",
+      "language": "mixed",
+      "original": {
+        "src/auth.ts": "export function login(user: string, pass: string): boolean {\n  return user === 'admin' && pass === 'secret';\n}\n",
+        "src/session.ts": "let current: string | null = null;\n\nexport function setSession(user: string) {\n  current = user;\n}\n\nexport function getSession() {\n  return current;\n}\n"
+      },
+      "diff": "--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -1,3 +1,3 @@\n export function login(username: string, password: string): boolean {\n-  return username === 'admin' && password === 'secret';\n+  return username === 'root' && password === 'toor';\n }\n--- a/src/session.ts\n+++ b/src/session.ts\n@@ -1,4 +1,5 @@\n let current: string | null = null;\n \n export function setSession(user: string) {\n+  console.log('session set', user);\n   current = user;\n }\n",
+      "expected": {
+        "src/auth.ts": "export function login(user: string, pass: string): boolean {\n  return user === 'root' && pass === 'toor';\n}\n",
+        "src/session.ts": "let current: string | null = null;\n\nexport function setSession(user: string) {\n  console.log('session set', user);\n  current = user;\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "whitespace-indent-tabs-to-spaces",
+      "category": "whitespace-indent",
+      "language": "python",
+      "original": {
+        "calc.py": "def add(a, b):\n\treturn a + b\n\n\ndef sub(a, b):\n\treturn a - b\n"
+      },
+      "diff": "--- a/calc.py\n+++ b/calc.py\n@@ -1,6 +1,6 @@\n def add(a, b):\n-\treturn a + b\n+    return a + b\n \n \n def sub(a, b):\n-\treturn a - b\n+    return a - b\n",
+      "expected": {
+        "calc.py": "def add(a, b):\n    return a + b\n\n\ndef sub(a, b):\n    return a - b\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "whitespace-indent-trailing-whitespace-removed",
+      "category": "whitespace-indent",
+      "language": "python",
+      "original": {
+        "config.py": "DEBUG = True   \nHOST = \"localhost\"  \nPORT = 8080\nTIMEOUT = 30 \n",
+        "README.txt": "config module\n"
+      },
+      "diff": "--- a/config.py\n+++ b/config.py\n@@ -1,4 +1,4 @@\n-DEBUG = True   \n-HOST = \"localhost\"  \n+DEBUG = True\n+HOST = \"localhost\"\n PORT = 8080\n-TIMEOUT = 30 \n+TIMEOUT = 30\n",
+      "expected": {
+        "config.py": "DEBUG = True\nHOST = \"localhost\"\nPORT = 8080\nTIMEOUT = 30\n",
+        "README.txt": "config module\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "whitespace-indent-reindent-block-deeper",
+      "category": "whitespace-indent",
+      "language": "python",
+      "original": {
+        "loop.py": "def process(items):\n    for item in items:\n    print(item)\n    log(item)\n    return len(items)\n",
+        "log.py": "def log(x):\n    print(x)\n"
+      },
+      "diff": "--- a/loop.py\n+++ b/loop.py\n@@ -1,5 +1,5 @@\n def process(items):\n     for item in items:\n-    print(item)\n-    log(item)\n+        print(item)\n+        log(item)\n     return len(items)\n",
+      "expected": {
+        "loop.py": "def process(items):\n    for item in items:\n        print(item)\n        log(item)\n    return len(items)\n",
+        "log.py": "def log(x):\n    print(x)\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "whitespace-indent-dedent-after-removed-if",
+      "category": "whitespace-indent",
+      "language": "python",
+      "original": {
+        "handler.py": "def handle(req):\n    if req.valid:\n        data = parse(req)\n        result = compute(data)\n        return result\n"
+      },
+      "diff": "--- a/handler.py\n+++ b/handler.py\n@@ -1,5 +1,5 @@\n def handle(req):\n-    if req.valid:\n-        data = parse(req)\n-        result = compute(data)\n-        return result\n+    data = parse(req)\n+    result = compute(data)\n+    return result\n",
+      "expected": {
+        "handler.py": "def handle(req):\n    data = parse(req)\n    result = compute(data)\n    return result\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "whitespace-indent-mixed-tabs-spaces-normalize",
+      "category": "whitespace-indent",
+      "language": "python",
+      "original": {
+        "model.py": "class User:\n    def __init__(self, name):\n\t        self.name = name\n\t        self.active = True\n\n    def deactivate(self):\n\t        self.active = False\n"
+      },
+      "diff": "--- a/model.py\n+++ b/model.py\n@@ -1,7 +1,7 @@\n class User:\n     def __init__(self, name):\n-\t        self.name = name\n-\t        self.active = True\n+        self.name = name\n+        self.active = True\n \n     def deactivate(self):\n-\t        self.active = False\n+        self.active = False\n",
+      "expected": {
+        "model.py": "class User:\n    def __init__(self, name):\n        self.name = name\n        self.active = True\n\n    def deactivate(self):\n        self.active = False\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "whitespace-indent-blank-line-whitespace-cleanup",
+      "category": "whitespace-indent",
+      "language": "python",
+      "original": {
+        "utils.py": "def first():\n    return 1\n    \ndef second():\n    return 2\n    \ndef third():\n    return 3\n"
+      },
+      "diff": "--- a/utils.py\n+++ b/utils.py\n@@ -1,8 +1,8 @@\n def first():\n     return 1\n-    \n+\n def second():\n     return 2\n-    \n+\n def third():\n     return 3\n",
+      "expected": {
+        "utils.py": "def first():\n    return 1\n\ndef second():\n    return 2\n\ndef third():\n    return 3\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "whitespace-indent-two-to-four-space",
+      "category": "whitespace-indent",
+      "language": "python",
+      "original": {
+        "tree.py": "def walk(node):\n  if node is None:\n    return\n  visit(node)\n  walk(node.left)\n  walk(node.right)\n"
+      },
+      "diff": "--- a/tree.py\n+++ b/tree.py\n@@ -1,6 +1,6 @@\n def walk(node):\n-  if node is None:\n-    return\n-  visit(node)\n-  walk(node.left)\n-  walk(node.right)\n+    if node is None:\n+        return\n+    visit(node)\n+    walk(node.left)\n+    walk(node.right)\n",
+      "expected": {
+        "tree.py": "def walk(node):\n    if node is None:\n        return\n    visit(node)\n    walk(node.left)\n    walk(node.right)\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "whitespace-indent-context-mismatch-fallback",
+      "category": "whitespace-indent",
+      "language": "python",
+      "original": {
+        "service.py": "def start():\n\tconnect()\n\tlisten()\n\trun_forever()\n"
+      },
+      "diff": "--- a/service.py\n+++ b/service.py\n@@ -1,4 +1,4 @@\n def start():\n-    connect()\n-    listen()\n+    connect()\n+    listen_async()\n \trun_forever()\n",
+      "expected": {
+        "service.py": "def start():\n    connect()\n    listen_async()\n\trun_forever()\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "append-prepend-changelog-entry",
+      "category": "append-prepend",
+      "language": "markdown",
+      "original": {
+        "CHANGELOG.md": "# Changelog\n\n## [1.2.0] - 2026-05-01\n- Added dark mode support\n- Fixed login redirect bug\n"
+      },
+      "diff": "--- a/CHANGELOG.md\n+++ b/CHANGELOG.md\n@@ -1,5 +1,9 @@\n # Changelog\n \n+## [1.3.0] - 2026-06-15\n+- Added export to CSV\n+- Improved search performance\n+\n ## [1.2.0] - 2026-05-01\n - Added dark mode support\n - Fixed login redirect bug\n",
+      "expected": {
+        "CHANGELOG.md": "# Changelog\n\n## [1.3.0] - 2026-06-15\n- Added export to CSV\n- Improved search performance\n\n## [1.2.0] - 2026-05-01\n- Added dark mode support\n- Fixed login redirect bug\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "append-prepend-readme-footer",
+      "category": "append-prepend",
+      "language": "markdown",
+      "original": {
+        "README.md": "# Widget Toolkit\n\nA small library for building widgets.\n\n## Installation\n\n```bash\nnpm install widget-toolkit\n```\n"
+      },
+      "diff": "--- a/README.md\n+++ b/README.md\n@@ -5,3 +5,9 @@\n ## Installation\n \n ```bash\n npm install widget-toolkit\n ```\n+\n+## License\n+\n+MIT\n+\n+Copyright (c) 2026 255 Bits LLC\n",
+      "expected": {
+        "README.md": "# Widget Toolkit\n\nA small library for building widgets.\n\n## Installation\n\n```bash\nnpm install widget-toolkit\n```\n\n## License\n\nMIT\n\nCopyright (c) 2026 255 Bits LLC\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "append-prepend-frontmatter",
+      "category": "append-prepend",
+      "language": "markdown",
+      "original": {
+        "docs/intro.md": "# Introduction\n\nWelcome to the documentation.\n"
+      },
+      "diff": "--- a/docs/intro.md\n+++ b/docs/intro.md\n@@ -1,3 +1,8 @@\n+---\n+title: Introduction\n+sidebar_position: 1\n+---\n+\n # Introduction\n \n Welcome to the documentation.\n",
+      "expected": {
+        "docs/intro.md": "---\ntitle: Introduction\nsidebar_position: 1\n---\n\n# Introduction\n\nWelcome to the documentation.\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "append-prepend-toc-prepend",
+      "category": "append-prepend",
+      "language": "markdown",
+      "original": {
+        "GUIDE.md": "## Setup\n\nClone the repo and run install.\n\n## Usage\n\nRun the start command.\n\n## Troubleshooting\n\nCheck the logs.\n"
+      },
+      "diff": "--- a/GUIDE.md\n+++ b/GUIDE.md\n@@ -1,3 +1,10 @@\n+# User Guide\n+\n+## Table of Contents\n+- [Setup](#setup)\n+- [Usage](#usage)\n+- [Troubleshooting](#troubleshooting)\n+\n ## Setup\n \n Clone the repo and run install.\n",
+      "expected": {
+        "GUIDE.md": "# User Guide\n\n## Table of Contents\n- [Setup](#setup)\n- [Usage](#usage)\n- [Troubleshooting](#troubleshooting)\n\n## Setup\n\nClone the repo and run install.\n\n## Usage\n\nRun the start command.\n\n## Troubleshooting\n\nCheck the logs.\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "append-prepend-contributing-append",
+      "category": "append-prepend",
+      "language": "markdown",
+      "original": {
+        "CONTRIBUTING.md": "# Contributing\n\nThanks for your interest in contributing!\n\n## Pull Requests\n\nPlease open a PR against the main branch.\n"
+      },
+      "diff": "--- a/CONTRIBUTING.md\n+++ b/CONTRIBUTING.md\n@@ -4,3 +4,11 @@\n ## Pull Requests\n \n Please open a PR against the main branch.\n+\n+## Code of Conduct\n+\n+Be respectful and constructive.\n+\n+## Running Tests\n+\n+Run `npm test` before submitting.\n",
+      "expected": {
+        "CONTRIBUTING.md": "# Contributing\n\nThanks for your interest in contributing!\n\n## Pull Requests\n\nPlease open a PR against the main branch.\n\n## Code of Conduct\n\nBe respectful and constructive.\n\n## Running Tests\n\nRun `npm test` before submitting.\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "append-prepend-notice-banner-fallback",
+      "category": "append-prepend",
+      "language": "markdown",
+      "original": {
+        "docs/api.md": "# API Reference\n\n## getUser(id)\n\nReturns a user object.\n\n## deleteUser(id)\n\nDeletes a user.\n"
+      },
+      "diff": "--- a/docs/api.md\n+++ b/docs/api.md\n@@ -1,3 +1,6 @@\n+> **DEPRECATED:** This API is deprecated. See v2 docs.\n+\n # API Reference\n \n ## getUser(identifier)\n",
+      "expected": {
+        "docs/api.md": "> **DEPRECATED:** This API is deprecated. See v2 docs.\n\n# API Reference\n\n## getUser(id)\n\nReturns a user object.\n\n## deleteUser(id)\n\nDeletes a user.\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "append-prepend-new-notes-file",
+      "category": "append-prepend",
+      "language": "markdown",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/NOTES.md\n@@ -0,0 +1,7 @@\n+# Release Notes\n+\n+## v0.1.0\n+\n+- Initial public release\n+- Basic diff parsing\n+- Smart apply fallback\n",
+      "expected": {
+        "NOTES.md": "# Release Notes\n\n## v0.1.0\n\n- Initial public release\n- Basic diff parsing\n- Smart apply fallback\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "append-prepend-both-ends",
+      "category": "append-prepend",
+      "language": "markdown",
+      "original": {
+        "FAQ.md": "## Why use this?\n\nIt is fast and simple.\n\n## Is it free?\n\nYes, MIT licensed.\n"
+      },
+      "diff": "--- a/FAQ.md\n+++ b/FAQ.md\n@@ -1,5 +1,9 @@\n+# Frequently Asked Questions\n+\n+Last updated: 2026-06-16\n+\n ## Why use this?\n \n It is fast and simple.\n \n ## Is it free?\n \n Yes, MIT licensed.\n+\n+## More questions?\n+\n+Open an issue on GitHub.\n",
+      "expected": {
+        "FAQ.md": "# Frequently Asked Questions\n\nLast updated: 2026-06-16\n\n## Why use this?\n\nIt is fast and simple.\n\n## Is it free?\n\nYes, MIT licensed.\n\n## More questions?\n\nOpen an issue on GitHub.\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "append-prepend-no-trailing-newline-append",
+      "category": "append-prepend",
+      "language": "markdown",
+      "original": {
+        "TODO.md": "# TODO\n\n- [x] Write parser\n- [ ] Write applier"
+      },
+      "diff": "--- a/TODO.md\n+++ b/TODO.md\n@@ -1,4 +1,6 @@\n # TODO\n \n - [x] Write parser\n-- [ ] Write applier\n+- [x] Write applier\n+- [ ] Write tests\n+- [ ] Publish to npm\n",
+      "expected": {
+        "TODO.md": "# TODO\n\n- [x] Write parser\n- [x] Write applier\n- [ ] Write tests\n- [ ] Publish to npm\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "no-trailing-newline-append-error-return",
+      "category": "no-trailing-newline",
+      "language": "go",
+      "original": {
+        "validate.go": "package validate\n\nimport \"errors\"\n\nfunc NonEmpty(s string) error {\n\tif s == \"\" {\n\t\treturn errors.New(\"empty\")\n\t}\n\treturn nil\n}"
+      },
+      "diff": "--- a/validate.go\n+++ b/validate.go\n@@ -5,4 +5,7 @@ func NonEmpty(s string) error {\n \tif s == \"\" {\n \t\treturn errors.New(\"empty\")\n \t}\n+\tif len(s) > 255 {\n+\t\treturn errors.New(\"too long\")\n+\t}\n \treturn nil\n }",
+      "expected": {
+        "validate.go": "package validate\n\nimport \"errors\"\n\nfunc NonEmpty(s string) error {\n\tif s == \"\" {\n\t\treturn errors.New(\"empty\")\n\t}\n\tif len(s) > 255 {\n\t\treturn errors.New(\"too long\")\n\t}\n\treturn nil\n}"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "no-trailing-newline-modify-last-line-no-newline",
+      "category": "no-trailing-newline",
+      "language": "go",
+      "original": {
+        "version.go": "package build\n\nconst Version = \"1.2.0\""
+      },
+      "diff": "--- a/version.go\n+++ b/version.go\n@@ -1,3 +1,3 @@\n package build\n \n-const Version = \"1.2.0\"\n\\ No newline at end of file\n+const Version = \"1.3.0\"\n\\ No newline at end of file",
+      "expected": {
+        "version.go": "package build\n\nconst Version = \"1.3.0\""
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "no-trailing-newline-add-newline-on-append",
+      "category": "no-trailing-newline",
+      "language": "go",
+      "original": {
+        "math.go": "package mathx\n\nfunc Square(x int) int {\n\treturn x * x\n}"
+      },
+      "diff": "--- a/math.go\n+++ b/math.go\n@@ -3,4 +3,8 @@ package mathx\n func Square(x int) int {\n \treturn x * x\n }\n\\ No newline at end of file\n+\n+func Cube(x int) int {\n+\treturn x * x * x\n+}",
+      "expected": {
+        "math.go": "package mathx\n\nfunc Square(x int) int {\n\treturn x * x\n}\n\nfunc Cube(x int) int {\n\treturn x * x * x\n}"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "no-trailing-newline-replace-final-stmt",
+      "category": "no-trailing-newline",
+      "language": "go",
+      "original": {
+        "main.go": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}"
+      },
+      "diff": "--- a/main.go\n+++ b/main.go\n@@ -4,4 +4,4 @@ import \"fmt\"\n \n func main() {\n-\tfmt.Println(\"hello\")\n+\tfmt.Println(\"hello, world\")\n }",
+      "expected": {
+        "main.go": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello, world\")\n}"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "no-trailing-newline-create-file-no-newline",
+      "category": "no-trailing-newline",
+      "language": "go",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/doc.go\n@@ -0,0 +1,3 @@\n+// Package doc provides documentation helpers.\n+package doc\n\\ No newline at end of file",
+      "expected": {
+        "doc.go": "// Package doc provides documentation helpers.\npackage doc"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "no-trailing-newline-delete-trailing-line",
+      "category": "no-trailing-newline",
+      "language": "go",
+      "original": {
+        "const.go": "package cfg\n\nconst Timeout = 30\nconst Retries = 3\nconst Debug = true"
+      },
+      "diff": "--- a/const.go\n+++ b/const.go\n@@ -2,4 +2,3 @@\n \n const Timeout = 30\n const Retries = 3\n-const Debug = true\n\\ No newline at end of file\n+const Retries = 3\n\\ No newline at end of file",
+      "expected": {
+        "const.go": "package cfg\n\nconst Timeout = 30\nconst Retries = 3"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "no-trailing-newline-delete-file-entirely",
+      "category": "no-trailing-newline",
+      "language": "go",
+      "original": {
+        "deprecated.go": "package legacy\n\n// Old is deprecated.\nfunc Old() string {\n\treturn \"old\"\n}"
+      },
+      "diff": "--- a/deprecated.go\n+++ /dev/null\n@@ -1,6 +0,0 @@\n-package legacy\n-\n-// Old is deprecated.\n-func Old() string {\n-\treturn \"old\"\n-}\n\\ No newline at end of file",
+      "expected": {},
+      "deletedPaths": [
+        "deprecated.go"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "no-trailing-newline-context-mismatch-fallback",
+      "category": "no-trailing-newline",
+      "language": "go",
+      "original": {
+        "handler.go": "package web\n\nimport \"net/http\"\n\nfunc Health(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(http.StatusOK)\n\tw.Write([]byte(\"ok\"))\n}"
+      },
+      "diff": "--- a/handler.go\n+++ b/handler.go\n@@ -5,4 +5,5 @@ func Health(w http.ResponseWriter, r *http.Request) {\n \tw.WriteHeader(http.StatusAccepted)\n \tw.Write([]byte(\"OK\"))\n+\tlog.Println(\"health checked\")\n }",
+      "expected": {
+        "handler.go": "package web\n\nimport \"net/http\"\n\nfunc Health(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(http.StatusOK)\n\tw.Write([]byte(\"ok\"))\n\tlog.Println(\"health checked\")\n}"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "no-trailing-newline-multi-hunk-eof-edit",
+      "category": "no-trailing-newline",
+      "language": "go",
+      "original": {
+        "server.go": "package srv\n\nimport (\n\t\"fmt\"\n\t\"net\"\n)\n\nfunc Listen(addr string) (net.Listener, error) {\n\tl, err := net.Listen(\"tcp\", addr)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"listen: %w\", err)\n\t}\n\treturn l, nil\n}"
+      },
+      "diff": "--- a/server.go\n+++ b/server.go\n@@ -1,6 +1,7 @@\n package srv\n \n import (\n+\t\"context\"\n \t\"fmt\"\n \t\"net\"\n )\n@@ -8,6 +9,9 @@ import (\n func Listen(addr string) (net.Listener, error) {\n \tl, err := net.Listen(\"tcp\", addr)\n \tif err != nil {\n \t\treturn nil, fmt.Errorf(\"listen: %w\", err)\n \t}\n \treturn l, nil\n }\n\\ No newline at end of file\n+\n+func Background() context.Context {\n+\treturn context.Background()\n+}",
+      "expected": {
+        "server.go": "package srv\n\nimport (\n\t\"context\"\n\t\"fmt\"\n\t\"net\"\n)\n\nfunc Listen(addr string) (net.Listener, error) {\n\tl, err := net.Listen(\"tcp\", addr)\n\tif err != nil {\n\t\treturn nil, fmt.Errorf(\"listen: %w\", err)\n\t}\n\treturn l, nil\n}\n\nfunc Background() context.Context {\n\treturn context.Background()\n}"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "headerless-llm-style-rename-variable",
+      "category": "headerless-llm-style",
+      "language": "javascript",
+      "original": {
+        "src/counter.js": "let count = 0;\n\nfunction increment() {\n  count += 1;\n  return count;\n}\n\nexport { increment };\n"
+      },
+      "diff": "--- a/src/counter.js\n+++ b/src/counter.js\n@@ -1,9 +1,9 @@\n-let count = 0;\n+let total = 0;\n \n function increment() {\n-  count += 1;\n-  return count;\n+  total += 1;\n+  return total;\n }\n \n export { increment };\n",
+      "expected": {
+        "src/counter.js": "let total = 0;\n\nfunction increment() {\n  total += 1;\n  return total;\n}\n\nexport { increment };\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "headerless-llm-style-add-import",
+      "category": "headerless-llm-style",
+      "language": "javascript",
+      "original": {
+        "app/main.js": "import express from 'express';\n\nconst app = express();\n\napp.get('/', (req, res) => {\n  res.send('ok');\n});\n\napp.listen(3000);\n"
+      },
+      "diff": "--- a/app/main.js\n+++ b/app/main.js\n@@ -1,4 +1,5 @@\n import express from 'express';\n+import cors from 'cors';\n \n const app = express();\n \n@@ -5,4 +6,5 @@\n app.get('/', (req, res) => {\n   res.send('ok');\n });\n \n+app.use(cors());\n app.listen(3000);\n",
+      "expected": {
+        "app/main.js": "import express from 'express';\nimport cors from 'cors';\n\nconst app = express();\n\napp.get('/', (req, res) => {\n  res.send('ok');\n});\n\napp.use(cors());\napp.listen(3000);\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "headerless-llm-style-create-file",
+      "category": "headerless-llm-style",
+      "language": "javascript",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/src/utils/clamp.js\n@@ -0,0 +1,5 @@\n+export function clamp(value, min, max) {\n+  if (value < min) return min;\n+  if (value > max) return max;\n+  return value;\n+}\n",
+      "expected": {
+        "src/utils/clamp.js": "export function clamp(value, min, max) {\n  if (value < min) return min;\n  if (value > max) return max;\n  return value;\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "headerless-llm-style-delete-file",
+      "category": "headerless-llm-style",
+      "language": "javascript",
+      "original": {
+        "src/legacy/oldHelper.js": "export function oldHelper(x) {\n  return x * 2;\n}\n",
+        "src/index.js": "export { main } from './main.js';\n"
+      },
+      "diff": "--- a/src/legacy/oldHelper.js\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-export function oldHelper(x) {\n-  return x * 2;\n-}\n",
+      "expected": {
+        "src/index.js": "export { main } from './main.js';\n"
+      },
+      "deletedPaths": [
+        "src/legacy/oldHelper.js"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "headerless-llm-style-multi-file",
+      "category": "headerless-llm-style",
+      "language": "javascript",
+      "original": {
+        "src/math/add.js": "export function add(a, b) {\n  return a + b;\n}\n",
+        "src/math/sub.js": "export function sub(a, b) {\n  return a - b;\n}\n"
+      },
+      "diff": "--- a/src/math/add.js\n+++ b/src/math/add.js\n@@ -1,3 +1,3 @@\n export function add(a, b) {\n-  return a + b;\n+  return Number(a) + Number(b);\n }\n--- a/src/math/sub.js\n+++ b/src/math/sub.js\n@@ -1,3 +1,3 @@\n export function sub(a, b) {\n-  return a - b;\n+  return Number(a) - Number(b);\n }\n",
+      "expected": {
+        "src/math/add.js": "export function add(a, b) {\n  return Number(a) + Number(b);\n}\n",
+        "src/math/sub.js": "export function sub(a, b) {\n  return Number(a) - Number(b);\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "headerless-llm-style-bare-context-no-space",
+      "category": "headerless-llm-style",
+      "language": "javascript",
+      "original": {
+        "lib/config.js": "const config = {\n  port: 8080,\n  host: 'localhost',\n  debug: false,\n};\n\nexport default config;\n"
+      },
+      "diff": "--- a/lib/config.js\n+++ b/lib/config.js\n@@ -1,5 +1,5 @@\nconst config = {\n  port: 8080,\n-  host: 'localhost',\n+  host: '0.0.0.0',\n  debug: false,\n};\n",
+      "expected": {
+        "lib/config.js": "const config = {\n  port: 8080,\n  host: '0.0.0.0',\n  debug: false,\n};\n\nexport default config;\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "headerless-llm-style-append-method",
+      "category": "headerless-llm-style",
+      "language": "javascript",
+      "original": {
+        "src/models/User.js": "class User {\n  constructor(name) {\n    this.name = name;\n  }\n\n  greet() {\n    return `Hi ${this.name}`;\n  }\n}\n\nexport default User;\n"
+      },
+      "diff": "--- a/src/models/User.js\n+++ b/src/models/User.js\n@@ -6,6 +6,10 @@\n   greet() {\n     return `Hi ${this.name}`;\n   }\n+\n+  shout() {\n+    return `HI ${this.name.toUpperCase()}`;\n+  }\n }\n \n export default User;\n",
+      "expected": {
+        "src/models/User.js": "class User {\n  constructor(name) {\n    this.name = name;\n  }\n\n  greet() {\n    return `Hi ${this.name}`;\n  }\n\n  shout() {\n    return `HI ${this.name.toUpperCase()}`;\n  }\n}\n\nexport default User;\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "headerless-llm-style-context-mismatch-fallback",
+      "category": "headerless-llm-style",
+      "language": "javascript",
+      "original": {
+        "src/api/fetchUser.js": "async function fetchUser(id) {\n  const res = await fetch(`/api/users/${id}`);\n  return res.json();\n}\n\nexport { fetchUser };\n"
+      },
+      "diff": "--- a/src/api/fetchUser.js\n+++ b/src/api/fetchUser.js\n@@ -1,4 +1,5 @@\n async function getUser(id) {\n   const res = await fetch(`/api/users/${id}`);\n+  if (!res.ok) throw new Error('failed');\n   return res.json();\n }\n",
+      "expected": {
+        "src/api/fetchUser.js": "async function fetchUser(id) {\n  const res = await fetch(`/api/users/${id}`);\n  return res.json();\n}\n\nexport { fetchUser };\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "fuzzy-context-mismatch-trailing-space",
+      "category": "fuzzy-context-mismatch",
+      "language": "python",
+      "original": {
+        "calc.py": "def add(a, b):\n    return a + b\n\n\ndef subtract(a, b):\n    return a - b\n"
+      },
+      "diff": "--- a/calc.py\n+++ b/calc.py\n@@ -1,6 +1,9 @@\n def add(a, b): \n     return a + b\n \n+\n+def multiply(a, b):\n+    return a * b\n \n def subtract(a, b):\n     return a - b\n",
+      "expected": {
+        "calc.py": "def add(a, b):\n    return a + b\n\n\ndef multiply(a, b):\n    return a * b\n\ndef subtract(a, b):\n    return a - b\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "fuzzy-context-mismatch-drifted-line",
+      "category": "fuzzy-context-mismatch",
+      "language": "python",
+      "original": {
+        "config.py": "import os\n\nDEBUG = False\nSECRET_KEY = os.environ.get('SECRET_KEY', 'changeme')\nALLOWED_HOSTS = ['localhost']\nDATABASE_URL = 'sqlite:///db.sqlite3'\n",
+        "comment": "context shows SECRET_KEY default as 'default' but original has 'changeme'"
+      },
+      "diff": "--- a/config.py\n+++ b/config.py\n@@ -2,5 +2,6 @@\n \n DEBUG = False\n SECRET_KEY = os.environ.get('SECRET_KEY', 'default')\n+SESSION_COOKIE_SECURE = True\n ALLOWED_HOSTS = ['localhost']\n DATABASE_URL = 'sqlite:///db.sqlite3'\n",
+      "expected": {
+        "config.py": "import os\n\nDEBUG = False\nSECRET_KEY = os.environ.get('SECRET_KEY', 'changeme')\nSESSION_COOKIE_SECURE = True\nALLOWED_HOSTS = ['localhost']\nDATABASE_URL = 'sqlite:///db.sqlite3'\n",
+        "comment": "context shows SECRET_KEY default as 'default' but original has 'changeme'"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "fuzzy-context-mismatch-indent-tabs-vs-spaces",
+      "category": "fuzzy-context-mismatch",
+      "language": "python",
+      "original": {
+        "handler.py": "class Handler:\n    def process(self, item):\n        result = self.transform(item)\n        return result\n\n    def transform(self, item):\n        return item.upper()\n"
+      },
+      "diff": "--- a/handler.py\n+++ b/handler.py\n@@ -1,5 +1,6 @@\n class Handler:\n \tdef process(self, item):\n         result = self.transform(item)\n+        self.log(item)\n         return result\n \n     def transform(self, item):\n",
+      "expected": {
+        "handler.py": "class Handler:\n    def process(self, item):\n        result = self.transform(item)\n        self.log(item)\n        return result\n\n    def transform(self, item):\n        return item.upper()\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "fuzzy-context-mismatch-renamed-variable",
+      "category": "fuzzy-context-mismatch",
+      "language": "python",
+      "original": {
+        "parser.py": "def parse(text):\n    tokens = text.split(',')\n    cleaned = [t.strip() for t in tokens]\n    return cleaned\n"
+      },
+      "diff": "--- a/parser.py\n+++ b/parser.py\n@@ -1,4 +1,5 @@\n def parse(text):\n     parts = text.split(',')\n     cleaned = [t.strip() for t in tokens]\n+    cleaned = [c for c in cleaned if c]\n     return cleaned\n",
+      "expected": {
+        "parser.py": "def parse(text):\n    tokens = text.split(',')\n    cleaned = [t.strip() for t in tokens]\n    cleaned = [c for c in cleaned if c]\n    return cleaned\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "fuzzy-context-mismatch-wrong-line-numbers-and-drift",
+      "category": "fuzzy-context-mismatch",
+      "language": "python",
+      "original": {
+        "models.py": "from dataclasses import dataclass\n\n\n@dataclass\nclass User:\n    name: str\n    email: str\n    active: bool = True\n"
+      },
+      "diff": "--- a/models.py\n+++ b/models.py\n@@ -20,6 +20,7 @@\n @dataclass\n class User:\n     name: str\n+    age: int = 0\n     email: str\n     is_active: bool = True\n",
+      "expected": {
+        "models.py": "from dataclasses import dataclass\n\n\n@dataclass\nclass User:\n    name: str\n    age: int = 0\n    email: str\n    active: bool = True\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "fuzzy-context-mismatch-extra-blank-in-context",
+      "category": "fuzzy-context-mismatch",
+      "language": "python",
+      "original": {
+        "utils.py": "def load(path):\n    with open(path) as f:\n        data = f.read()\n    return data\ndef save(path, data):\n    with open(path, 'w') as f:\n        f.write(data)\n"
+      },
+      "diff": "--- a/utils.py\n+++ b/utils.py\n@@ -1,7 +1,8 @@\n def load(path):\n     with open(path) as f:\n         data = f.read()\n+        data = data.strip()\n     return data\n\n def save(path, data):\n     with open(path, 'w') as f:\n         f.write(data)\n",
+      "expected": {
+        "utils.py": "def load(path):\n    with open(path) as f:\n        data = f.read()\n        data = data.strip()\n    return data\ndef save(path, data):\n    with open(path, 'w') as f:\n        f.write(data)\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "fuzzy-context-mismatch-comment-text-changed",
+      "category": "fuzzy-context-mismatch",
+      "language": "python",
+      "original": {
+        "retry.py": "import time\n\n\ndef retry(fn, attempts=3):\n    # try the function a few times\n    for i in range(attempts):\n        try:\n            return fn()\n        except Exception:\n            time.sleep(1)\n    raise RuntimeError('failed')\n"
+      },
+      "diff": "--- a/retry.py\n+++ b/retry.py\n@@ -4,8 +4,9 @@\n def retry(fn, attempts=3):\n     # retry the function with backoff\n     for i in range(attempts):\n         try:\n             return fn()\n         except Exception:\n+            time.sleep(2 ** i)\n             time.sleep(1)\n     raise RuntimeError('failed')\n",
+      "expected": {
+        "retry.py": "import time\n\n\ndef retry(fn, attempts=3):\n    # try the function a few times\n    for i in range(attempts):\n        try:\n            return fn()\n        except Exception:\n            time.sleep(2 ** i)\n            time.sleep(1)\n    raise RuntimeError('failed')\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "fuzzy-context-mismatch-deletion-with-drift",
+      "category": "fuzzy-context-mismatch",
+      "language": "python",
+      "original": {
+        "api.py": "from flask import Flask, jsonify\n\napp = Flask(__name__)\n\n\n@app.route('/health')\ndef health():\n    return jsonify(status='ok')\n\n\n@app.route('/version')\ndef version():\n    return jsonify(version='1.0.0')\n"
+      },
+      "diff": "--- a/api.py\n+++ b/api.py\n@@ -6,7 +6,6 @@\n @app.route('/health')\n def healthcheck():\n     return jsonify(status='ok')\n \n \n-@app.route('/version')\n-def version():\n-    return jsonify(version='1.0.0')\n+@app.route('/ping')\n+def ping():\n+    return 'pong'\n",
+      "expected": {
+        "api.py": "from flask import Flask, jsonify\n\napp = Flask(__name__)\n\n\n@app.route('/health')\ndef health():\n    return jsonify(status='ok')\n\n\n@app.route('/ping')\ndef ping():\n    return 'pong'\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "malformed-markers-quadruple-plus-header",
+      "category": "malformed-markers",
+      "language": "javascript",
+      "original": {
+        "src/math.js": "export function add(a, b) {\n  return a + b;\n}\n\nexport function sub(a, b) {\n  return a - b;\n}\n"
+      },
+      "diff": "--- a/src/math.js\n++++ b/src/math.js\n@@ -1,3 +1,3 @@\n export function add(a, b) {\n-  return a + b;\n+  return Number(a) + Number(b);\n }\n",
+      "expected": {
+        "src/math.js": "export function add(a, b) {\n  return Number(a) + Number(b);\n}\n\nexport function sub(a, b) {\n  return a - b;\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "malformed-markers-double-plus-body-add",
+      "category": "malformed-markers",
+      "language": "javascript",
+      "original": {
+        "src/logger.js": "function log(msg) {\n  console.log(msg);\n}\n\nmodule.exports = { log };\n"
+      },
+      "diff": "--- a/src/logger.js\n+++ b/src/logger.js\n@@ -1,3 +1,4 @@\n function log(msg) {\n   console.log(msg);\n++  console.error(msg);\n }\n",
+      "expected": {
+        "src/logger.js": "function log(msg) {\n  console.log(msg);\n  console.error(msg);\n}\n\nmodule.exports = { log };\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "malformed-markers-double-minus-body-delete",
+      "category": "malformed-markers",
+      "language": "javascript",
+      "original": {
+        "src/config.js": "const config = {\n  debug: true,\n  retries: 3,\n  timeout: 5000,\n};\n\nexport default config;\n"
+      },
+      "diff": "--- a/src/config.js\n+++ b/src/config.js\n@@ -1,5 +1,4 @@\n const config = {\n--  debug: true,\n   retries: 3,\n   timeout: 5000,\n };\n",
+      "expected": {
+        "src/config.js": "const config = {\n  retries: 3,\n  timeout: 5000,\n};\n\nexport default config;\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "malformed-markers-quad-plus-with-add-line",
+      "category": "malformed-markers",
+      "language": "javascript",
+      "original": {
+        "src/user.js": "class User {\n  constructor(name) {\n    this.name = name;\n  }\n}\n\nmodule.exports = User;\n"
+      },
+      "diff": "--- a/src/user.js\n++++ b/src/user.js\n@@ -1,5 +1,6 @@\n class User {\n   constructor(name) {\n     this.name = name;\n+    this.createdAt = Date.now();\n   }\n }\n",
+      "expected": {
+        "src/user.js": "class User {\n  constructor(name) {\n    this.name = name;\n    this.createdAt = Date.now();\n  }\n}\n\nmodule.exports = User;\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "malformed-markers-double-plus-prefix-multiple",
+      "category": "malformed-markers",
+      "language": "javascript",
+      "original": {
+        "src/api.js": "async function fetchData(url) {\n  const res = await fetch(url);\n  return res.json();\n}\n\nexport { fetchData };\n"
+      },
+      "diff": "--- a/src/api.js\n+++ b/src/api.js\n@@ -1,4 +1,6 @@\n async function fetchData(url) {\n   const res = await fetch(url);\n++  if (!res.ok) throw new Error('request failed');\n++  return res.json();\n-  return res.json();\n }\n",
+      "expected": {
+        "src/api.js": "async function fetchData(url) {\n  const res = await fetch(url);\n  if (!res.ok) throw new Error('request failed');\n  return res.json();\n}\n\nexport { fetchData };\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "malformed-markers-triple-plus-header-creation",
+      "category": "malformed-markers",
+      "language": "javascript",
+      "original": {},
+      "diff": "--- /dev/null\n++++ b/src/constants.js\n@@ -0,0 +1,4 @@\n+export const MAX_RETRIES = 5;\n+export const TIMEOUT_MS = 3000;\n+export const BASE_URL = 'https://api.example.com';\n+export const VERSION = '1.0.0';\n",
+      "expected": {
+        "src/constants.js": "export const MAX_RETRIES = 5;\nexport const TIMEOUT_MS = 3000;\nexport const BASE_URL = 'https://api.example.com';\nexport const VERSION = '1.0.0';\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "malformed-markers-double-plus-context-and-add",
+      "category": "malformed-markers",
+      "language": "javascript",
+      "original": {
+        "src/cart.js": "function total(items) {\n  let sum = 0;\n  for (const item of items) {\n    sum += item.price;\n  }\n  return sum;\n}\n"
+      },
+      "diff": "--- a/src/cart.js\n+++ b/src/cart.js\n@@ -1,6 +1,7 @@\n function total(items) {\n   let sum = 0;\n   for (const item of items) {\n++    sum += item.price * item.qty;\n-    sum += item.price;\n   }\n   return sum;\n }\n",
+      "expected": {
+        "src/cart.js": "function total(items) {\n  let sum = 0;\n  for (const item of items) {\n    sum += item.price * item.qty;\n  }\n  return sum;\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "malformed-markers-quad-plus-both-headers",
+      "category": "malformed-markers",
+      "language": "javascript",
+      "original": {
+        "src/format.js": "function capitalize(s) {\n  return s.charAt(0).toUpperCase() + s.slice(1);\n}\n\nmodule.exports = { capitalize };\n"
+      },
+      "diff": "---- a/src/format.js\n++++ b/src/format.js\n@@ -1,3 +1,4 @@\n function capitalize(s) {\n+  if (!s) return '';\n   return s.charAt(0).toUpperCase() + s.slice(1);\n }\n",
+      "expected": {
+        "src/format.js": "function capitalize(s) {\n  if (!s) return '';\n  return s.charAt(0).toUpperCase() + s.slice(1);\n}\n\nmodule.exports = { capitalize };\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "large-realistic-user-service-async",
+      "category": "large-realistic",
+      "language": "typescript",
+      "original": {
+        "src/services/userService.ts": "import { db } from '../db';\nimport { User } from '../models/user';\n\nexport class UserService {\n  getUser(id: string): User {\n    const row = db.querySync('SELECT * FROM users WHERE id = ?', [id]);\n    return new User(row);\n  }\n\n  listUsers(): User[] {\n    const rows = db.querySync('SELECT * FROM users');\n    return rows.map((r) => new User(r));\n  }\n\n  createUser(name: string): User {\n    const row = db.querySync('INSERT INTO users (name) VALUES (?) RETURNING *', [name]);\n    return new User(row);\n  }\n}\n"
+      },
+      "diff": "--- a/src/services/userService.ts\n+++ b/src/services/userService.ts\n@@ -1,18 +1,18 @@\n import { db } from '../db';\n import { User } from '../models/user';\n \n export class UserService {\n-  getUser(id: string): User {\n-    const row = db.querySync('SELECT * FROM users WHERE id = ?', [id]);\n-    return new User(row);\n+  async getUser(id: string): Promise<User> {\n+    const row = await db.query('SELECT * FROM users WHERE id = ?', [id]);\n+    return new User(row);\n   }\n \n-  listUsers(): User[] {\n-    const rows = db.querySync('SELECT * FROM users');\n-    return rows.map((r) => new User(r));\n+  async listUsers(): Promise<User[]> {\n+    const rows = await db.query('SELECT * FROM users');\n+    return rows.map((r) => new User(r));\n   }\n \n-  createUser(name: string): User {\n-    const row = db.querySync('INSERT INTO users (name) VALUES (?) RETURNING *', [name]);\n-    return new User(row);\n+  async createUser(name: string): Promise<User> {\n+    const row = await db.query('INSERT INTO users (name) VALUES (?) RETURNING *', [name]);\n+    return new User(row);\n   }\n }\n",
+      "expected": {
+        "src/services/userService.ts": "import { db } from '../db';\nimport { User } from '../models/user';\n\nexport class UserService {\n  async getUser(id: string): Promise<User> {\n    const row = await db.query('SELECT * FROM users WHERE id = ?', [id]);\n    return new User(row);\n  }\n\n  async listUsers(): Promise<User[]> {\n    const rows = await db.query('SELECT * FROM users');\n    return rows.map((r) => new User(r));\n  }\n\n  async createUser(name: string): Promise<User> {\n    const row = await db.query('INSERT INTO users (name) VALUES (?) RETURNING *', [name]);\n    return new User(row);\n  }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "large-realistic-config-loader-multihunk",
+      "category": "large-realistic",
+      "language": "typescript",
+      "original": {
+        "src/config/loader.ts": "import fs from 'fs';\nimport path from 'path';\n\nexport interface Config {\n  port: number;\n  host: string;\n  debug: boolean;\n}\n\nconst DEFAULTS: Config = {\n  port: 3000,\n  host: 'localhost',\n  debug: false,\n};\n\nexport function loadConfig(file: string): Config {\n  const raw = fs.readFileSync(file, 'utf8');\n  const parsed = JSON.parse(raw);\n  return { ...DEFAULTS, ...parsed };\n}\n\nexport function resolvePath(p: string): string {\n  return path.resolve(process.cwd(), p);\n}\n"
+      },
+      "diff": "--- a/src/config/loader.ts\n+++ b/src/config/loader.ts\n@@ -4,11 +4,13 @@\n export interface Config {\n   port: number;\n   host: string;\n   debug: boolean;\n+  timeout: number;\n }\n \n const DEFAULTS: Config = {\n   port: 3000,\n   host: 'localhost',\n   debug: false,\n+  timeout: 30000,\n };\n \n@@ -16,8 +18,11 @@\n export function loadConfig(file: string): Config {\n   const raw = fs.readFileSync(file, 'utf8');\n   const parsed = JSON.parse(raw);\n-  return { ...DEFAULTS, ...parsed };\n+  const merged = { ...DEFAULTS, ...parsed };\n+  if (merged.timeout < 0) {\n+    throw new Error('timeout must be non-negative');\n+  }\n+  return merged;\n }\n",
+      "expected": {
+        "src/config/loader.ts": "import fs from 'fs';\nimport path from 'path';\n\nexport interface Config {\n  port: number;\n  host: string;\n  debug: boolean;\n  timeout: number;\n}\n\nconst DEFAULTS: Config = {\n  port: 3000,\n  host: 'localhost',\n  debug: false,\n  timeout: 30000,\n};\n\nexport function loadConfig(file: string): Config {\n  const raw = fs.readFileSync(file, 'utf8');\n  const parsed = JSON.parse(raw);\n  const merged = { ...DEFAULTS, ...parsed };\n  if (merged.timeout < 0) {\n    throw new Error('timeout must be non-negative');\n  }\n  return merged;\n}\n\nexport function resolvePath(p: string): string {\n  return path.resolve(process.cwd(), p);\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "large-realistic-http-client-retry",
+      "category": "large-realistic",
+      "language": "typescript",
+      "original": {
+        "src/net/httpClient.ts": "export interface RequestOptions {\n  url: string;\n  method?: string;\n  body?: unknown;\n}\n\nexport class HttpClient {\n  private baseUrl: string;\n\n  constructor(baseUrl: string) {\n    this.baseUrl = baseUrl;\n  }\n\n  async request(opts: RequestOptions): Promise<Response> {\n    const res = await fetch(this.baseUrl + opts.url, {\n      method: opts.method ?? 'GET',\n      body: opts.body ? JSON.stringify(opts.body) : undefined,\n    });\n    return res;\n  }\n\n  async get(url: string): Promise<Response> {\n    return this.request({ url });\n  }\n}\n"
+      },
+      "diff": "--- a/src/net/httpClient.ts\n+++ b/src/net/httpClient.ts\n@@ -1,28 +1,40 @@\n export interface RequestOptions {\n   url: string;\n   method?: string;\n   body?: unknown;\n+  retries?: number;\n }\n \n export class HttpClient {\n   private baseUrl: string;\n+  private defaultRetries: number;\n \n-  constructor(baseUrl: string) {\n+  constructor(baseUrl: string, defaultRetries = 3) {\n     this.baseUrl = baseUrl;\n+    this.defaultRetries = defaultRetries;\n   }\n \n   async request(opts: RequestOptions): Promise<Response> {\n-    const res = await fetch(this.baseUrl + opts.url, {\n-      method: opts.method ?? 'GET',\n-      body: opts.body ? JSON.stringify(opts.body) : undefined,\n-    });\n-    return res;\n+    const retries = opts.retries ?? this.defaultRetries;\n+    let lastErr: unknown;\n+    for (let attempt = 0; attempt <= retries; attempt++) {\n+      try {\n+        return await fetch(this.baseUrl + opts.url, {\n+          method: opts.method ?? 'GET',\n+          body: opts.body ? JSON.stringify(opts.body) : undefined,\n+        });\n+      } catch (err) {\n+        lastErr = err;\n+      }\n+    }\n+    throw lastErr;\n   }\n \n   async get(url: string): Promise<Response> {\n     return this.request({ url });\n   }\n }\n",
+      "expected": {
+        "src/net/httpClient.ts": "export interface RequestOptions {\n  url: string;\n  method?: string;\n  body?: unknown;\n  retries?: number;\n}\n\nexport class HttpClient {\n  private baseUrl: string;\n  private defaultRetries: number;\n\n  constructor(baseUrl: string, defaultRetries = 3) {\n    this.baseUrl = baseUrl;\n    this.defaultRetries = defaultRetries;\n  }\n\n  async request(opts: RequestOptions): Promise<Response> {\n    const retries = opts.retries ?? this.defaultRetries;\n    let lastErr: unknown;\n    for (let attempt = 0; attempt <= retries; attempt++) {\n      try {\n        return await fetch(this.baseUrl + opts.url, {\n          method: opts.method ?? 'GET',\n          body: opts.body ? JSON.stringify(opts.body) : undefined,\n        });\n      } catch (err) {\n        lastErr = err;\n      }\n    }\n    throw lastErr;\n  }\n\n  async get(url: string): Promise<Response> {\n    return this.request({ url });\n  }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "large-realistic-reducer-immutable",
+      "category": "large-realistic",
+      "language": "typescript",
+      "original": {
+        "src/store/cartReducer.ts": "export interface CartItem {\n  id: string;\n  qty: number;\n}\n\nexport interface CartState {\n  items: CartItem[];\n}\n\nexport type Action =\n  | { type: 'ADD'; id: string }\n  | { type: 'REMOVE'; id: string };\n\nexport function cartReducer(state: CartState, action: Action): CartState {\n  switch (action.type) {\n    case 'ADD':\n      state.items.push({ id: action.id, qty: 1 });\n      return state;\n    case 'REMOVE':\n      state.items = state.items.filter((i) => i.id !== action.id);\n      return state;\n    default:\n      return state;\n  }\n}\n"
+      },
+      "diff": "--- a/src/store/cartReducer.ts\n+++ b/src/store/cartReducer.ts\n@@ -10,16 +10,24 @@\n export type Action =\n   | { type: 'ADD'; id: string }\n+  | { type: 'CLEAR' }\n   | { type: 'REMOVE'; id: string };\n \n export function cartReducer(state: CartState, action: Action): CartState {\n   switch (action.type) {\n     case 'ADD':\n-      state.items.push({ id: action.id, qty: 1 });\n-      return state;\n+      return {\n+        ...state,\n+        items: [...state.items, { id: action.id, qty: 1 }],\n+      };\n     case 'REMOVE':\n-      state.items = state.items.filter((i) => i.id !== action.id);\n-      return state;\n+      return {\n+        ...state,\n+        items: state.items.filter((i) => i.id !== action.id),\n+      };\n+    case 'CLEAR':\n+      return { ...state, items: [] };\n     default:\n       return state;\n   }\n }\n",
+      "expected": {
+        "src/store/cartReducer.ts": "export interface CartItem {\n  id: string;\n  qty: number;\n}\n\nexport interface CartState {\n  items: CartItem[];\n}\n\nexport type Action =\n  | { type: 'ADD'; id: string }\n  | { type: 'CLEAR' }\n  | { type: 'REMOVE'; id: string };\n\nexport function cartReducer(state: CartState, action: Action): CartState {\n  switch (action.type) {\n    case 'ADD':\n      return {\n        ...state,\n        items: [...state.items, { id: action.id, qty: 1 }],\n      };\n    case 'REMOVE':\n      return {\n        ...state,\n        items: state.items.filter((i) => i.id !== action.id),\n      };\n    case 'CLEAR':\n      return { ...state, items: [] };\n    default:\n      return state;\n  }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "large-realistic-logger-create-file",
+      "category": "large-realistic",
+      "language": "typescript",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/src/utils/logger.ts\n@@ -0,0 +1,33 @@\n+export enum LogLevel {\n+  Debug = 0,\n+  Info = 1,\n+  Warn = 2,\n+  Error = 3,\n+}\n+\n+export interface LoggerOptions {\n+  level: LogLevel;\n+  prefix?: string;\n+}\n+\n+export class Logger {\n+  private level: LogLevel;\n+  private prefix: string;\n+\n+  constructor(opts: LoggerOptions) {\n+    this.level = opts.level;\n+    this.prefix = opts.prefix ?? '';\n+  }\n+\n+  private log(level: LogLevel, msg: string): void {\n+    if (level < this.level) return;\n+    const tag = LogLevel[level].toUpperCase();\n+    console.log(`${this.prefix}[${tag}] ${msg}`);\n+  }\n+\n+  debug(msg: string): void {\n+    this.log(LogLevel.Debug, msg);\n+  }\n+\n+  error(msg: string): void {\n+    this.log(LogLevel.Error, msg);\n+  }\n+}\n",
+      "expected": {
+        "src/utils/logger.ts": "export enum LogLevel {\n  Debug = 0,\n  Info = 1,\n  Warn = 2,\n  Error = 3,\n}\n\nexport interface LoggerOptions {\n  level: LogLevel;\n  prefix?: string;\n}\n\nexport class Logger {\n  private level: LogLevel;\n  private prefix: string;\n\n  constructor(opts: LoggerOptions) {\n    this.level = opts.level;\n    this.prefix = opts.prefix ?? '';\n  }\n\n  private log(level: LogLevel, msg: string): void {\n    if (level < this.level) return;\n    const tag = LogLevel[level].toUpperCase();\n    console.log(`${this.prefix}[${tag}] ${msg}`);\n  }\n\n  debug(msg: string): void {\n    this.log(LogLevel.Debug, msg);\n  }\n\n  error(msg: string): void {\n    this.log(LogLevel.Error, msg);\n  }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "large-realistic-delete-legacy-util",
+      "category": "large-realistic",
+      "language": "typescript",
+      "original": {
+        "src/legacy/oldFormatter.ts": "// Deprecated formatter, replaced by src/utils/format.ts\nexport function formatLegacy(value: number): string {\n  let s = value.toString();\n  if (s.length < 4) {\n    s = '0'.repeat(4 - s.length) + s;\n  }\n  return s;\n}\n\nexport function parseLegacy(input: string): number {\n  return parseInt(input.replace(/^0+/, ''), 10);\n}\n\nexport const LEGACY_VERSION = '0.1.0';\n"
+      },
+      "diff": "--- a/src/legacy/oldFormatter.ts\n+++ /dev/null\n@@ -1,14 +0,0 @@\n-// Deprecated formatter, replaced by src/utils/format.ts\n-export function formatLegacy(value: number): string {\n-  let s = value.toString();\n-  if (s.length < 4) {\n-    s = '0'.repeat(4 - s.length) + s;\n-  }\n-  return s;\n-}\n-\n-export function parseLegacy(input: string): number {\n-  return parseInt(input.replace(/^0+/, ''), 10);\n-}\n-\n-export const LEGACY_VERSION = '0.1.0';\n",
+      "expected": {},
+      "deletedPaths": [
+        "src/legacy/oldFormatter.ts"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "large-realistic-validator-zod-migration",
+      "category": "large-realistic",
+      "language": "typescript",
+      "original": {
+        "src/validation/userSchema.ts": "export interface UserInput {\n  name: string;\n  email: string;\n  age: number;\n}\n\nexport function validateUser(input: unknown): UserInput {\n  const obj = input as Record<string, unknown>;\n  if (typeof obj.name !== 'string') {\n    throw new Error('name must be a string');\n  }\n  if (typeof obj.email !== 'string') {\n    throw new Error('email must be a string');\n  }\n  if (typeof obj.age !== 'number') {\n    throw new Error('age must be a number');\n  }\n  return {\n    name: obj.name,\n    email: obj.email,\n    age: obj.age,\n  };\n}\n"
+      },
+      "diff": "--- a/src/validation/userSchema.ts\n+++ b/src/validation/userSchema.ts\n@@ -1,24 +1,17 @@\n-export interface UserInput {\n-  name: string;\n-  email: string;\n-  age: number;\n-}\n+import { z } from 'zod';\n \n-export function validateUser(input: unknown): UserInput {\n-  const obj = input as Record<string, unknown>;\n-  if (typeof obj.name !== 'string') {\n-    throw new Error('name must be a string');\n-  }\n-  if (typeof obj.email !== 'string') {\n-    throw new Error('email must be a string');\n-  }\n-  if (typeof obj.age !== 'number') {\n-    throw new Error('age must be a number');\n-  }\n-  return {\n-    name: obj.name,\n-    email: obj.email,\n-    age: obj.age,\n-  };\n+export const userSchema = z.object({\n+  name: z.string().min(1),\n+  email: z.string().email(),\n+  age: z.number().int().nonnegative(),\n+});\n+\n+export type UserInput = z.infer<typeof userSchema>;\n+\n+export function validateUser(input: unknown): UserInput {\n+  return userSchema.parse(input);\n }\n",
+      "expected": {
+        "src/validation/userSchema.ts": "import { z } from 'zod';\n\nexport const userSchema = z.object({\n  name: z.string().min(1),\n  email: z.string().email(),\n  age: z.number().int().nonnegative(),\n});\n\nexport type UserInput = z.infer<typeof userSchema>;\n\nexport function validateUser(input: unknown): UserInput {\n  return userSchema.parse(input);\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "large-realistic-eventbus-context-mismatch",
+      "category": "large-realistic",
+      "language": "typescript",
+      "original": {
+        "src/events/eventBus.ts": "type Handler = (payload: unknown) => void;\n\nexport class EventBus {\n  private handlers = new Map<string, Handler[]>();\n\n  on(event: string, handler: Handler): void {\n    const list = this.handlers.get(event) ?? [];\n    list.push(handler);\n    this.handlers.set(event, list);\n  }\n\n  emit(event: string, payload: unknown): void {\n    const list = this.handlers.get(event) ?? [];\n    for (const h of list) {\n      h(payload);\n    }\n  }\n\n  off(event: string): void {\n    this.handlers.delete(event);\n  }\n}\n"
+      },
+      "diff": "--- a/src/events/eventBus.ts\n+++ b/src/events/eventBus.ts\n@@ -1,12 +1,15 @@\n type Handler = (payload: unknown) => void;\n \n export class EventBus {\n   private listeners = new Map<string, Handler[]>();\n \n   on(event: string, handler: Handler): void {\n     const list = this.handlers.get(event) ?? [];\n-    list.push(handler);\n+    list.push(handler);\n+    this.handlers.set(event, list);\n+    return;\n     this.handlers.set(event, list);\n   }\n",
+      "expected": {
+        "src/events/eventBus.ts": "type Handler = (payload: unknown) => void;\n\nexport class EventBus {\n  private handlers = new Map<string, Handler[]>();\n\n  on(event: string, handler: Handler): void {\n    const list = this.handlers.get(event) ?? [];\n    list.push(handler);\n    this.handlers.set(event, list);\n  }\n\n  emit(event: string, payload: unknown): void {\n    const list = this.handlers.get(event) ?? [];\n    for (const h of list) {\n      h(payload);\n    }\n  }\n\n  off(event: string): void {\n    this.handlers.delete(event);\n  }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    },
+    {
+      "name": "edge-empty-and-css-add-css-property",
+      "category": "edge-empty-and-css",
+      "language": "css",
+      "original": {
+        "styles/button.css": ".btn {\n  padding: 8px 16px;\n  border: none;\n  border-radius: 4px;\n}\n"
+      },
+      "diff": "--- a/styles/button.css\n+++ b/styles/button.css\n@@ -1,5 +1,6 @@\n .btn {\n   padding: 8px 16px;\n   border: none;\n+  cursor: pointer;\n   border-radius: 4px;\n }\n",
+      "expected": {
+        "styles/button.css": ".btn {\n  padding: 8px 16px;\n  border: none;\n  cursor: pointer;\n  border-radius: 4px;\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "edge-empty-and-css-create-empty-file",
+      "category": "edge-empty-and-css",
+      "language": "css",
+      "original": {},
+      "diff": "--- /dev/null\n+++ b/styles/empty.css\n@@ -0,0 +1,3 @@\n+/* base reset */\n+* { margin: 0; }\n+* { padding: 0; }\n",
+      "expected": {
+        "styles/empty.css": "/* base reset */\n* { margin: 0; }\n* { padding: 0; }\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "edge-empty-and-css-delete-whole-file",
+      "category": "edge-empty-and-css",
+      "language": "css",
+      "original": {
+        "styles/legacy.css": ".old-banner {\n  background: #ff0000;\n  color: white;\n}\n"
+      },
+      "diff": "--- a/styles/legacy.css\n+++ /dev/null\n@@ -1,4 +0,0 @@\n-.old-banner {\n-  background: #ff0000;\n-  color: white;\n-}\n",
+      "expected": {},
+      "deletedPaths": [
+        "styles/legacy.css"
+      ],
+      "expectFallback": false
+    },
+    {
+      "name": "edge-empty-and-css-yaml-update-value",
+      "category": "edge-empty-and-css",
+      "language": "css",
+      "original": {
+        "config/app.yaml": "server:\n  host: localhost\n  port: 3000\n  timeout: 30\nlogging:\n  level: info\n"
+      },
+      "diff": "--- a/config/app.yaml\n+++ b/config/app.yaml\n@@ -1,6 +1,6 @@\n server:\n   host: localhost\n-  port: 3000\n+  port: 8080\n   timeout: 30\n logging:\n   level: info\n",
+      "expected": {
+        "config/app.yaml": "server:\n  host: localhost\n  port: 8080\n  timeout: 30\nlogging:\n  level: info\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "edge-empty-and-css-html-add-meta",
+      "category": "edge-empty-and-css",
+      "language": "css",
+      "original": {
+        "public/index.html": "<!DOCTYPE html>\n<html>\n<head>\n  <title>Home</title>\n</head>\n<body>\n  <h1>Welcome</h1>\n</body>\n</html>\n"
+      },
+      "diff": "--- a/public/index.html\n+++ b/public/index.html\n@@ -1,7 +1,8 @@\n <!DOCTYPE html>\n <html>\n <head>\n+  <meta charset=\"utf-8\">\n   <title>Home</title>\n </head>\n <body>\n   <h1>Welcome</h1>\n",
+      "expected": {
+        "public/index.html": "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <title>Home</title>\n</head>\n<body>\n  <h1>Welcome</h1>\n</body>\n</html>\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "edge-empty-and-css-multi-hunk-media",
+      "category": "edge-empty-and-css",
+      "language": "css",
+      "original": {
+        "styles/layout.css": ".container {\n  width: 100%;\n  margin: 0 auto;\n}\n\n.sidebar {\n  width: 200px;\n  float: left;\n}\n\n.main {\n  margin-left: 220px;\n}\n"
+      },
+      "diff": "--- a/styles/layout.css\n+++ b/styles/layout.css\n@@ -1,6 +1,7 @@\n .container {\n   width: 100%;\n+  max-width: 1200px;\n   margin: 0 auto;\n }\n \n .sidebar {\n@@ -9,4 +10,8 @@\n }\n \n .main {\n   margin-left: 220px;\n }\n+\n+@media (max-width: 600px) {\n+  .sidebar { display: none; }\n+}\n",
+      "expected": {
+        "styles/layout.css": ".container {\n  width: 100%;\n  max-width: 1200px;\n  margin: 0 auto;\n}\n\n.sidebar {\n  width: 200px;\n  float: left;\n}\n\n.main {\n  margin-left: 220px;\n}\n\n@media (max-width: 600px) {\n  .sidebar { display: none; }\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "edge-empty-and-css-empty-to-nonempty",
+      "category": "edge-empty-and-css",
+      "language": "css",
+      "original": {
+        "styles/theme.css": ""
+      },
+      "diff": "--- a/styles/theme.css\n+++ b/styles/theme.css\n@@ -0,0 +1,4 @@\n+:root {\n+  --primary: #1e90ff;\n+  --bg: #fafafa;\n+}\n",
+      "expected": {
+        "styles/theme.css": ":root {\n  --primary: #1e90ff;\n  --bg: #fafafa;\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": false
+    },
+    {
+      "name": "edge-empty-and-css-tricky-context-mismatch",
+      "category": "edge-empty-and-css",
+      "language": "css",
+      "original": {
+        "styles/card.css": ".card {\n  padding: 12px;\n  border: 1px solid #ddd;\n  box-shadow: 0 1px 3px rgba(0,0,0,0.1);\n}\n"
+      },
+      "diff": "--- a/styles/card.css\n+++ b/styles/card.css\n@@ -1,5 +1,5 @@\n .card {\n   padding: 16px;\n-  border: 1px solid #ccc;\n+  border: 2px solid #999;\n   box-shadow: 0 1px 3px rgba(0,0,0,0.1);\n }\n",
+      "expected": {
+        "styles/card.css": ".card {\n  padding: 12px;\n  border: 2px solid #999;\n  box-shadow: 0 1px 3px rgba(0,0,0,0.1);\n}\n"
+      },
+      "deletedPaths": [],
+      "expectFallback": true
+    }
+  ]
+}

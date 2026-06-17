@@ -4,7 +4,7 @@
  * plain `{ path: content }` map instead of a project directory on disk.
  */
 
-import { splitLinesKeepEnds, splitLines } from './text.js';
+import { splitLines } from './text.js';
 
 /**
  * Parse unified diff text into individual per-file patches.
@@ -64,33 +64,37 @@ export function parseDiffPerFile(diffText) {
     let currentFile = null;
     let deletionMode = false;
     let fromHeader = null;
+    // File headers tolerate 2-3 markers because LLMs emit malformed `--`/`++`
+    // headers. To avoid misreading a hunk body line that deletes/adds content
+    // starting with `-`/`+` (e.g. a markdown list item `- [ ] ...` appears as
+    // `-- [ ] ...` in the diff) as a new file header, a `---`/`--` line only
+    // counts as a from-header when the *next* line is a `+++`/`++` to-header —
+    // unified diffs always pair them. A real deletion body line is followed by
+    // an ordinary `+`/context line instead, so it stays in the patch body.
     const headerFromRe = /^-{2,3}\s+(.*)$/;
     const headerToRe = /^\+{2,3}\s+(.*)$/;
 
     const stripPrefix = (p) => (p.startsWith('a/') || p.startsWith('b/') ? p.slice(2) : p);
 
-    for (const line of lines) {
+    for (let idx = 0; idx < lines.length; idx++) {
+      const line = lines[idx];
       const fromMatch = line.match(headerFromRe);
-      const toMatch = line.match(headerToRe);
+      const next = idx + 1 < lines.length ? lines[idx + 1] : null;
+      const nextTo = next !== null ? next.match(headerToRe) : null;
 
-      if (fromMatch) {
+      if (fromMatch && nextTo) {
         if (currentFile !== null && currentLines.length) {
           if (deletionMode && !currentLines.some((l) => l.startsWith('+++ /dev/null'))) {
             currentLines.push('+++ /dev/null');
           }
           diffs.push([currentFile, currentLines.join('\n')]);
         }
-        currentLines = [line];
+        // Start the new file and consume the paired to-header in one step.
+        currentLines = [line, next];
         deletionMode = false;
         currentFile = null;
         fromHeader = fromMatch[1].trim();
-        continue;
-      }
-
-      if (toMatch && currentLines.length) {
-        currentLines.push(line);
-        const fileTo = toMatch[1].trim();
-
+        const fileTo = nextTo[1].trim();
         if (fileTo === '/dev/null') {
           deletionMode = true;
           if (fromHeader && fromHeader !== '/dev/null') {
@@ -99,6 +103,7 @@ export function parseDiffPerFile(diffText) {
         } else {
           currentFile = stripPrefix(fileTo);
         }
+        idx += 1; // skip the to-header line we just consumed
         continue;
       }
 
@@ -161,18 +166,27 @@ const HUNK_HEADER_RE = /^@@(?: -(\d+)(?:,(\d+))?)?(?: \+(\d+)(?:,(\d+))?)? @@/;
 /**
  * Apply a single-file unified diff patch to `originalContent`.
  *
+ * Each hunk is located by matching its context+deletion lines against the
+ * original rather than trusting the `@@` line numbers, which LLM-generated
+ * diffs frequently get slightly wrong. The `@@` start line is used only as a
+ * hint to disambiguate between multiple matching positions. The full block of
+ * context and deletion lines must match exactly, so a hunk that does not apply
+ * cleanly returns `null` instead of silently corrupting the file.
+ *
  * @param {string} originalContent
  * @param {string} patch
  * @returns {string | null} the patched content, or null if the patch fails
  */
-function applyPatchToFile(originalContent, patch) {
-  const originalLines = splitLinesKeepEnds(originalContent || '');
-  const newLines = [];
-  let currentIndex = 0;
-
+export function applyPatchToFile(originalContent, patch) {
+  // Work with newline-free lines and re-join with '\n' at the end. This keeps a
+  // file's last line (which may lack a trailing newline) on equal footing with
+  // the rest, so additions after it do not swallow a blank line.
+  const originalLines = splitLines(originalContent || '');
   const patchLines = splitLines(patch);
-  const rstripNewline = (s) => s.replace(/\n+$/, '');
 
+  // Parse the patch into hunks: { hint, ops: [{ kind, text }] } where kind is
+  // 'context' | 'del' | 'add'.
+  const hunks = [];
   let i = 0;
   while (i < patchLines.length) {
     const line = patchLines[i];
@@ -185,47 +199,85 @@ function applyPatchToFile(originalContent, patch) {
         if (!m) return null;
         origStart = m[1] !== undefined ? parseInt(m[1], 10) : 1;
       }
-      const hunkStartIndex = origStart - 1; // diff headers are 1-indexed
-      if (hunkStartIndex > originalLines.length) return null;
-      for (let k = currentIndex; k < hunkStartIndex; k++) newLines.push(originalLines[k]);
-      currentIndex = hunkStartIndex;
+      const ops = [];
       i += 1;
-      // Process hunk lines until the next hunk header.
-      while (i < patchLines.length && !patchLines[i].startsWith('@@')) {
+      while (i < patchLines.length && !patchLines[i].replace(/^\s+/, '').startsWith('@@')) {
         const pline = patchLines[i];
-        if (pline.startsWith(' ')) {
-          const expected = pline.slice(1);
-          if (currentIndex < 0 || currentIndex >= originalLines.length) return null;
-          if (rstripNewline(originalLines[currentIndex]) !== expected) return null;
-          newLines.push(originalLines[currentIndex]);
-          currentIndex += 1;
+        if (pline.startsWith('\\')) {
+          // "\ No newline at end of file" marker — ignore.
+        } else if (pline.startsWith(' ')) {
+          ops.push({ kind: 'context', text: pline.slice(1) });
         } else if (pline.startsWith('-')) {
-          const expected = pline.slice(1);
-          if (currentIndex < 0 || currentIndex >= originalLines.length) return null;
-          if (rstripNewline(originalLines[currentIndex]) !== expected) return null;
-          currentIndex += 1;
+          ops.push({ kind: 'del', text: pline.slice(1) });
         } else if (pline.startsWith('+')) {
-          newLines.push(pline.slice(1) + '\n');
+          ops.push({ kind: 'add', text: pline.slice(1) });
         } else {
           // Bare context line without a leading space (LLM-style).
-          const expected = pline;
-          if (currentIndex < 0 || currentIndex >= originalLines.length) return null;
-          if (rstripNewline(originalLines[currentIndex]) !== expected) return null;
-          newLines.push(originalLines[currentIndex]);
-          currentIndex += 1;
+          ops.push({ kind: 'context', text: pline });
         }
         i += 1;
       }
+      hunks.push({ hint: origStart - 1, ops });
     } else {
       i += 1;
     }
   }
 
-  // Append remaining original lines.
-  for (let k = currentIndex; k < originalLines.length; k++) newLines.push(originalLines[k]);
+  // The lines that must already exist in the original, in order, for a hunk.
+  const oldBlockOf = (ops) =>
+    ops.filter((o) => o.kind !== 'add').map((o) => o.text);
 
-  let content = newLines.join('');
-  if (content && !content.endsWith('\n')) content += '\n';
+  // Find where `block` occurs in originalLines at index >= minPos, choosing the
+  // occurrence nearest to `hint`. Returns null if there is no exact match.
+  const findBlock = (block, minPos, hint) => {
+    if (block.length === 0) {
+      // Pure-addition hunk (e.g. new file / append): anchor at the hint.
+      return Math.min(Math.max(hint, minPos), originalLines.length);
+    }
+    let best = null;
+    for (let p = minPos; p + block.length <= originalLines.length; p++) {
+      let matched = true;
+      for (let j = 0; j < block.length; j++) {
+        if (originalLines[p + j] !== block[j]) {
+          matched = false;
+          break;
+        }
+      }
+      if (!matched) continue;
+      if (best === null || Math.abs(p - hint) < Math.abs(best - hint)) best = p;
+    }
+    return best;
+  };
+
+  const newLines = [];
+  let cursor = 0;
+  for (const hunk of hunks) {
+    const block = oldBlockOf(hunk.ops);
+    const pos = findBlock(block, cursor, hunk.hint);
+    if (pos === null) return null;
+
+    // Copy untouched lines between the previous hunk and this one.
+    for (let k = cursor; k < pos; k++) newLines.push(originalLines[k]);
+
+    let idx = pos;
+    for (const op of hunk.ops) {
+      if (op.kind === 'add') {
+        newLines.push(op.text);
+      } else if (op.kind === 'del') {
+        idx += 1; // consume the original line without emitting it
+      } else {
+        newLines.push(originalLines[idx]); // context: keep the original line
+        idx += 1;
+      }
+    }
+    cursor = idx;
+  }
+
+  // Append remaining original lines.
+  for (let k = cursor; k < originalLines.length; k++) newLines.push(originalLines[k]);
+
+  let content = newLines.join('\n');
+  if (content) content += '\n';
   return content;
 }
 

@@ -9,7 +9,16 @@ import { applyDiff, extractDiffBlocks, stripThinkTags, smartapply } from '../src
 test('applyDiff does not throw on a malformed -0,0 hunk against a non-empty file', () => {
   const files = { 'f.txt': 'a\nb\nc\n' };
   const diff = 'diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -0,0 +1,1 @@\n c\n+x\n';
-  // Must fail gracefully (no change) rather than crash with a TypeError.
+  // The -0,0 line numbers are bogus, but the context line "c" is found, so the
+  // addition applies after it (by content match) rather than crashing.
+  const result = applyDiff(files, diff);
+  assert.equal(result.changed, true);
+  assert.equal(result.files['f.txt'], 'a\nb\nc\nx\n');
+});
+
+test('applyDiff fails gracefully when a malformed hunk context is not found', () => {
+  const files = { 'f.txt': 'a\nb\nc\n' };
+  const diff = 'diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -0,0 +1,1 @@\n zzz\n+x\n';
   const result = applyDiff(files, diff);
   assert.equal(result.changed, false);
   assert.deepEqual(result.files, files);
@@ -33,6 +42,7 @@ test('stripThinkTags removes an unterminated <think> tag', () => {
 test('smartapply does not leak an unclosed think block into a file', async () => {
   const diff = 'diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-old\n+new\n';
   const mock = async () => 'def x():\n    pass\n<think>leaking reasoning with no close';
-  const updated = await smartapply(diff, { 'x.py': 'old\n' }, { callLlmForApply: mock });
+  // forceLlm: this exercises the LLM think-stripping path, not the fast path.
+  const updated = await smartapply(diff, { 'x.py': 'old\n' }, { callLlmForApply: mock, forceLlm: true });
   assert.equal(updated['x.py'], 'def x():\n    pass');
 });
