@@ -73,7 +73,7 @@ export async function callLlm({
   baseUrl,
   model,
   messages,
-  maxTokens = 30000,
+  maxTokens = null,
   temperature = 1.0,
   budgetTokens = null,
   fetchImpl,
@@ -94,7 +94,9 @@ export async function callLlm({
       if (m.role === 'system') systemMessage = m.content;
       else filtered.push(convertOpenAiMessageToAnthropic(m));
     }
-    const data = { model, messages: filtered, max_tokens: maxTokens, temperature };
+    // Anthropic's API requires max_tokens, so fall back to a generous default
+    // only on this path; callers can still pass an explicit cap.
+    const data = { model, messages: filtered, max_tokens: maxTokens ?? 32000, temperature };
     if (systemMessage) data.system = systemMessage;
     if (budgetTokens) {
       data.temperature = 1;
@@ -134,7 +136,8 @@ export async function callLlm({
 
   // OpenAI-compatible (NanoGPT) path, with backoff on transient errors.
   const endpoint = joinUrl(url, '/chat/completions');
-  const requestBody = JSON.stringify({ model, messages, max_tokens: maxTokens, temperature });
+  // Only send max_tokens when explicitly capped; otherwise let the model emit its full output.
+  const requestBody = JSON.stringify({ model, messages, temperature, ...(maxTokens ? { max_tokens: maxTokens } : {}) });
   let resp;
   for (let attempt = 0; ; attempt++) {
     resp = await doFetch(endpoint, {

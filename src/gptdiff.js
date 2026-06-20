@@ -78,7 +78,7 @@ function usageFrom(response) {
 export async function callLlmForDiff(systemPrompt, userPrompt, filesContent, model, opts = {}) {
   const {
     temperature = 1.0,
-    maxTokens = 30000,
+    maxTokens = null,
     apiKey,
     baseUrl,
     budgetTokens = null,
@@ -153,7 +153,9 @@ export async function generateDiff(environment, goal, opts = {}) {
 
   const { diff } = await callLlmForDiff(systemPrompt, goal, environment, model, {
     temperature: opts.temperature ?? 1.0,
-    maxTokens: opts.maxTokens ?? 32000,
+    // No default cap: let the model emit its full diff (avoids silent truncation
+    // that produces an unparseable diff). Callers may still pass an explicit maxTokens.
+    maxTokens: opts.maxTokens ?? null,
     apiKey: opts.apiKey,
     baseUrl: opts.baseUrl,
     budgetTokens: opts.budgetTokens ?? null,
@@ -179,7 +181,7 @@ export async function callLlmForApply(filePath, originalContent, fileDiff, model
     apiKey,
     baseUrl,
     extraPrompt = null,
-    maxTokens = 30000,
+    maxTokens = null,
     callLlm = defaultCallLlm,
   } = opts;
 
