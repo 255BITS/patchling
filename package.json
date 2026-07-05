@@ -1,5 +1,5 @@
 {
-  "name": "gptdiff-js",
+  "name": "gptdiff",
   "version": "0.2.0",
   "description": "Generate and apply git diffs using LLMs — a browser-first JavaScript port of gptdiff (generateDiff + smartapply), wired to NanoGPT.",
   "type": "module",
