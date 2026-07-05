@@ -218,8 +218,27 @@
   #realauth .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
   #realauth input { font: inherit; font-size: .82rem; padding: .38rem .55rem; border-radius: .45rem; border: 1px solid var(--line); background: var(--panel2); color: var(--ink); min-width: 0; }
   #keyinput { flex: 1 1 10rem; }
-  #modelinput { flex: 1 1 12rem; }
   .authnote { color: var(--muted); font-size: .75rem; margin-top: .4rem; }
+
+  /* model picker — same pattern as the live examples */
+  .modelrow { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; margin-top: .6rem; font-size: .82rem; }
+  .modelrow .mid { font-weight: 700; font-size: .8rem; }
+  .modelrow .mprice { color: var(--muted); font-size: .75rem; }
+  .modelrow button { font: inherit; font-size: .72rem; border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: .4rem; padding: .1rem .5rem; cursor: pointer; }
+  .modelrow button:hover { color: var(--ink); border-color: var(--accent); }
+  #modelpicker { display: none; margin-top: .5rem; border: 1px solid var(--line); border-radius: .55rem; padding: .6rem; background: var(--panel2); }
+  #modelsearch { width: 100%; font: inherit; font-size: .82rem; padding: .4rem .6rem; border-radius: .45rem; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+  #modelsearch:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  #modellist { max-height: 240px; overflow: auto; margin-top: .4rem; }
+  #modellist button {
+    display: flex; justify-content: space-between; gap: 1rem; width: 100%; text-align: left;
+    font: inherit; font-size: .78rem; padding: .3rem .5rem; border: 0; border-radius: .35rem;
+    background: none; color: var(--ink); cursor: pointer;
+  }
+  #modellist button:hover { background: var(--accent-soft); }
+  #modellist button.sel { background: var(--accent-soft); font-weight: 700; }
+  #modellist .price { color: var(--muted); white-space: nowrap; }
+  #modellist .divider { font-size: .68rem; color: var(--muted); text-align: center; margin: .35rem 0; }
 
   /* ---------- built with it ---------- */
   .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .9rem; margin-top: 1.5rem; }
@@ -303,6 +322,7 @@
   <a class="nl" href="#playground">Demo</a>
   <a class="nl" href="#built">Built with it</a>
   <a class="nl" href="#how">How it works</a>
+  <a class="nl" href="#models">Any model</a>
   <a class="nl" href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">GitHub</a>
 </nav>
 
@@ -361,9 +381,16 @@
               <span>Signed in ✓</span>
               <button class="btn" id="signout">Sign out</button>
             </div>
-            <div class="row" style="margin-top:.5rem">
-              <label for="modelinput" style="font-size:.78rem;color:var(--muted)">model</label>
-              <input id="modelinput" class="mono" />
+            <div class="modelrow">
+              <span style="color:var(--muted)">model</span>
+              <span class="mid mono" id="modelname"></span>
+              <span class="mprice" id="modelprice"></span>
+              <button id="modelchange">change</button>
+            </div>
+            <div id="modelpicker">
+              <input id="modelsearch" class="mono" placeholder="filter 600+ models, or type an exact id…" autocomplete="off" />
+              <div id="modellist"></div>
+              <p class="authnote" style="margin-top:.35rem"><span id="modelcount"></span> · top = each lab's latest flagship · price = $ in / $ out per 1M · Enter uses exact text</p>
             </div>
             <p class="authnote">Sign-in is OAuth (PKCE) straight from this page to NanoGPT: the token is issued to <i>your</i> browser, lives in localStorage, and every request goes browser → nano-gpt.com directly. There's no patchling server to trust because there is no patchling server. Prefer a key? <a href="https://nano-gpt.com/r/FXrrGWE4" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API — pay-per-use, no subscription. NanoGPT links on this page carry our referral code. OAuth needs the page served over http(s).</p>
           </div>
@@ -496,6 +523,39 @@ render(next); <span class="cmt">// your code decides what "apply" means</span></
   </div>
 </section>
 
+<section id="models">
+  <p class="kicker">No lock-in</p>
+  <h2>Default: NanoGPT. Required: nothing.</h2>
+  <p class="lead">patchling speaks the OpenAI-compatible chat-completions protocol. Point <code class="inline">baseUrl</code> at any provider — or hand it your own client and it never opens a socket at all.</p>
+  <div class="whygrid">
+    <div>
+      <p><b>Why NanoGPT is the default:</b> it's the only setup that works everywhere patchling runs. One pay-per-use key covers 600+ models, and OAuth (PKCE) works from a static page — the token is issued to your visitor's browser, so you can ship an AI-edit feature with <b>no backend at all</b>. That's how this page and every demo run. (NanoGPT links here carry our referral code.)</p>
+      <p><b>Already have a provider?</b> <code class="inline">baseUrl</code> takes any OpenAI-compatible endpoint — OpenAI, OpenRouter, Groq, a vLLM box in your rack, Ollama on localhost. <code class="inline">api.anthropic.com</code> is spoken natively. In Node and Python, <code class="inline">GPTDIFF_LLM_API_KEY</code> and <code class="inline">GPTDIFF_LLM_BASE_URL</code> configure it without touching code.</p>
+      <p><b>And the escape hatch is total.</b> Pass <code class="inline">callLlm</code> (and <code class="inline">callLlmForApply</code>) and patchling makes no network calls of its own — your gateway, your retries, your logging, your mocks in CI. The demo above runs on exactly this: its "model" is a canned reply.</p>
+    </div>
+    <div class="window">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">bring-your-own-model.js</span></div>
+      <pre><span class="cmt">// default — NanoGPT: one key, 600+ models</span>
+<span class="kw">await</span> generateDiff(env, goal, { apiKey });
+
+<span class="cmt">// any OpenAI-compatible endpoint</span>
+<span class="kw">await</span> generateDiff(env, goal, {
+  apiKey, model: <span class="hdr">"gpt-5.5"</span>,
+  baseUrl: <span class="hdr">"https://api.openai.com/v1"</span>,
+});
+
+<span class="cmt">// local &amp; private — Ollama, LM Studio, vLLM…</span>
+<span class="kw">await</span> generateDiff(env, goal, {
+  model: <span class="hdr">"qwen3:32b"</span>,
+  baseUrl: <span class="hdr">"http://localhost:11434/v1"</span>,
+});
+
+<span class="cmt">// yours entirely — patchling makes no network calls</span>
+<span class="kw">await</span> generateDiff(env, goal, { callLlm: myClient });</pre>
+    </div>
+  </div>
+</section>
+
 <section id="get">
   <p class="kicker">Get it</p>
   <h2>One primitive, two runtimes.</h2>
@@ -546,7 +606,9 @@ import { registerClient, beginSignIn, completeSignIn }
   from "https://esm.sh/patchling/oauth";
 
 const $ = (id) => document.getElementById(id);
-const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
+const DEFAULT_MODEL = "zai-org/glm-5.2:thinking";
+// Repairs are small, scoped rewrites — a fast non-thinking model keeps them snappy.
+const APPLY_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -690,8 +752,102 @@ let running = false;
 /* ---------- key + model storage ---------- */
 const getKey = () => localStorage.getItem("pl_key");
 const setKey = (k) => (k ? localStorage.setItem("pl_key", k) : localStorage.removeItem("pl_key"));
-$("modelinput").value = localStorage.getItem("pl_model") || DEFAULT_MODEL;
-$("modelinput").addEventListener("change", () => localStorage.setItem("pl_model", $("modelinput").value.trim() || DEFAULT_MODEL));
+let MODEL = localStorage.getItem("pl_model") || DEFAULT_MODEL;
+
+/* ---------- model picker (same pattern as the live examples) ---------- */
+let allModels = null, topOrder = new Map();
+const LABS = [
+  ["OpenAI", /^openai\/(gpt-[0-9]|o[1-9])/i],
+  ["Anthropic", /claude-(opus|sonnet)/i],
+  ["Google", /gemini[0-9.\-]*-pro|gemini-pro/i],
+  ["xAI", /grok-[0-9]/i],
+  ["DeepSeek", /deepseek-(r1|v3|v4|chat)/i],
+  ["Qwen", /qwen[0-9.]*-max/i],
+  ["Mistral", /mistral-large/i],
+];
+const PINNED = [DEFAULT_MODEL, "xiaomi/mimo-v2.5-pro-ultraspeed", "moonshotai/kimi-k2.7-code"];
+const SMALL = /flash|nano|\blite\b|\bmini\b|-mini|\bsmall\b|tiny|oss|guard|preview|search|codex|:(low|medium|high)\b|cheaper|multi-agent|-\d+b\b|a\d+b\b|^tee\//i;
+const px = (x) => (x == null ? null : "$" + Number(x).toFixed(2));
+const priceOf = (id) => (allModels || []).find((m) => m.id === id);
+
+function computeTop() {
+  const ids = new Set(allModels.map((m) => m.id));
+  const order = PINNED.filter((id) => ids.has(id));
+  const picks = [];
+  for (const [, re] of LABS) {
+    const m = allModels.filter((x) => re.test(x.id) && !SMALL.test(x.id)).sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+    if (m && !order.includes(m.id)) picks.push(m);
+  }
+  picks.sort((a, b) => (b.created || 0) - (a.created || 0));
+  for (const m of picks) order.push(m.id);
+  topOrder = new Map(order.map((id, i) => [id, i]));
+}
+const rank = (id) => (topOrder.has(id) ? topOrder.get(id) : 1e9);
+
+function setModel(id) {
+  MODEL = id;
+  localStorage.setItem("pl_model", id);
+  renderModelRow();
+}
+function renderModelRow() {
+  const m = priceOf(MODEL) || {};
+  $("modelname").textContent = MODEL;
+  $("modelprice").textContent = m.prompt != null ? `(${px(m.prompt)} / ${px(m.completion)} per 1M)` : "";
+}
+async function loadModels() {
+  if (allModels) return allModels;
+  let arr = [];
+  try {
+    const headers = {}; const k = getKey(); if (k) headers.Authorization = `Bearer ${k}`;
+    arr = (await (await fetch("https://nano-gpt.com/api/v1/models?detailed=true", { headers })).json()).data || [];
+  } catch { /* offline / blocked — the exact-id path still works */ }
+  allModels = arr.map((m) => ({ id: m.id, prompt: m.pricing?.prompt, completion: m.pricing?.completion })).filter((m) => m.id);
+  if (!allModels.length) allModels = [{ id: DEFAULT_MODEL }];
+  computeTop();
+  allModels.sort((a, b) => (rank(a.id) - rank(b.id)) || a.id.localeCompare(b.id));
+  renderModelRow();
+  return allModels;
+}
+function modelButton(m) {
+  const b = document.createElement("button");
+  if (m.id === MODEL) b.className = "sel";
+  const name = document.createElement("span"); name.className = "mono"; name.textContent = m.id;
+  const price = document.createElement("span"); price.className = "price mono";
+  price.textContent = m.prompt != null ? `${px(m.prompt)} / ${px(m.completion)}` : "—";
+  b.append(name, price);
+  b.addEventListener("click", () => { setModel(m.id); $("modelpicker").style.display = "none"; });
+  return b;
+}
+function renderModelList() {
+  const q = $("modelsearch").value.trim().toLowerCase();
+  const matches = (allModels || []).filter((m) => m.id.toLowerCase().includes(q));
+  $("modellist").innerHTML = "";
+  let dividerPlaced = !!q;
+  for (const m of matches) {
+    if (!dividerPlaced && rank(m.id) === 1e9) {
+      const d = document.createElement("div"); d.className = "divider"; d.textContent = "— all models —";
+      $("modellist").appendChild(d); dividerPlaced = true;
+    }
+    $("modellist").appendChild(modelButton(m));
+  }
+  $("modelcount").textContent = `${matches.length} match${matches.length === 1 ? "" : "es"}`;
+}
+$("modelchange").addEventListener("click", async () => {
+  const open = $("modelpicker").style.display === "block";
+  $("modelpicker").style.display = open ? "none" : "block";
+  if (!open) {
+    $("modelsearch").value = "";
+    $("modellist").innerHTML = "<div class='divider'>loading…</div>";
+    await loadModels();
+    renderModelList();
+    $("modelsearch").focus();
+  }
+});
+$("modelsearch").addEventListener("input", renderModelList);
+$("modelsearch").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { const v = $("modelsearch").value.trim(); if (v) { setModel(v); $("modelpicker").style.display = "none"; } }
+});
+renderModelRow();
 
 /* ---------- OAuth (Sign in with NanoGPT, PKCE) ---------- */
 // NanoGPT canonicalizes the loopback host to "localhost"; hop there so the
@@ -983,10 +1139,9 @@ async function run() {
 
   try {
     const key = getKey();
-    const model = $("modelinput").value.trim() || DEFAULT_MODEL;
     const genOpts = mode === "demo"
       ? { callLlm: makeFakeCallLlm(scn), onToken: onDiffToken }
-      : { apiKey: key, model, onToken: onDiffToken };
+      : { apiKey: key, model: MODEL, onToken: onDiffToken };
 
     const diff = await generateDiff(buildEnvironment(inputFiles), goal, genOpts);
     renderDiff(diff);
@@ -1025,7 +1180,7 @@ async function run() {
 
     const applyOpts = mode === "demo"
       ? { callLlmForApply: makeFakeApply(scn), onToken: onApplyToken }
-      : { apiKey: key, model: DEFAULT_MODEL, onToken: onApplyToken };
+      : { apiKey: key, model: APPLY_MODEL, onToken: onApplyToken };
 
     const updated = await smartapply(diff, inputFiles, applyOpts);
 
