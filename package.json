@@ -12,7 +12,17 @@
   "files": [
     "src"
   ],
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/255BITS/gptdiff-js.git"
+  },
+  "homepage": "https://github.com/255BITS/gptdiff-js#readme",
+  "bugs": {
+    "url": "https://github.com/255BITS/gptdiff-js/issues"
+  },
   "scripts": {
+    "prepublishOnly": "npm test",
     "test": "node --test",
     "test:live": "GPTDIFF_LIVE=1 node --test test/live.test.js",
     "benchmark": "node benchmark/run.js"

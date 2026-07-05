@@ -30,7 +30,21 @@ console.log(updated['greet.py']);
 
 ## Install / run
 
-It's plain ESM — point an import at `src/index.js`, or open `index.html` from a static server:
+```bash
+npm install gptdiff-js
+```
+
+```js
+import { generateDiff, smartapply } from 'gptdiff-js';
+```
+
+**Browser, no build step** — it's zero-dependency ESM, so a CDN import works directly (once the package is published to npm):
+
+```js
+import { generateDiff, smartapply } from 'https://esm.sh/gptdiff-js';
+```
+
+**Run from source** — point an import at `src/index.js`, or open `index.html` from a static server:
 
 ```bash
 npx serve .        # then visit the printed URL and try the demo
