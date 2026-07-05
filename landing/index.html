@@ -258,6 +258,13 @@
   @media (max-width: 760px) {
     .ecosys { grid-template-columns: 1fr; }
     section { margin: 3rem auto; }
+    /* 16px inputs, or iOS zooms the whole page on focus */
+    .goalrow input, #realauth input, .editor textarea { font-size: 16px; }
+    /* full-width goal input + full-width Run: the example goal stays readable */
+    .goalrow input { flex-basis: 100%; }
+    .goalrow .btn { flex: 1; justify-content: center; }
+    .scenarios button { padding: .42rem .85rem; font-size: .84rem; }
+    nav a.nl { padding: .35rem 0; }
   }
 </style>
 </head>
@@ -334,7 +341,7 @@
               <label for="modelinput" style="font-size:.78rem;color:var(--muted)">model</label>
               <input id="modelinput" class="mono" />
             </div>
-            <p class="authnote">Keys come from <a href="https://nano-gpt.com" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API. Your key stays in this browser (localStorage) and is sent only to nano-gpt.com. OAuth sign-in requires the page to be served over http(s).</p>
+            <p class="authnote">Keys come from <a href="https://nano-gpt.com/r/FXrrGWE4" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API. New to NanoGPT? <a href="https://nano-gpt.com/r/FXrrGWE4" target="_blank" rel="noopener">create an account →</a> — pay-per-use, no subscription. Your key stays in this browser (localStorage) and is sent only to nano-gpt.com. OAuth sign-in requires the page to be served over http(s).</p>
           </div>
         </details>
       </div>
@@ -466,7 +473,8 @@ import { generateDiff, smartapply }
       <p>The same bounded primitive, ported to Python.</p>
       <pre><code>pip install patchling
 
-from patchling import generate_diff, smartapply</code></pre>
+from patchling import (
+    generate_diff, smartapply)</code></pre>
       <div class="links">
         <a href="https://github.com/255BITS/patchling-py" target="_blank" rel="noopener">GitHub</a>
         <a href="https://pypi.org/project/patchling/" target="_blank" rel="noopener">PyPI</a>
@@ -526,7 +534,7 @@ const SCENARIOS = {
   night: {
     label: "Restyle a scene",
     desc: "The pre-recorded model reply gets style.css slightly wrong — git apply would reject it. patchling heals it and the scene turns to night.",
-    goal: "Make it a night launch — dark sky, stars, a moon, and a glowing engine flame",
+    goal: "Make it a night launch",
     files: {
       "scene.svg": NIGHT_SCENE,
       "style.css": NIGHT_CSS,
@@ -549,7 +557,7 @@ const SCENARIOS = {
   character: {
     label: "Direct a character",
     desc: "Nothing here is code — one sentence rewrites the character's mood and continues the script.",
-    goal: "The lab loses power mid-conversation",
+    goal: "The lab loses power",
     files: {
       "soul.md": "MARVIS — a sardonic lab assistant. Loyal, theatrical, allergic to being thanked.\n",
       "mood.md": "smug — the fusion demo went perfectly.\n",
@@ -577,7 +585,7 @@ const SCENARIOS = {
   comic: {
     label: "Add a comic panel",
     desc: "One diff edits panel 2 and creates panels/3.json out of thin air — new files, applied atomically.",
-    goal: "Raise the stakes — end the page on a cliffhanger",
+    goal: "End the page on a cliffhanger",
     files: {
       "config.json": '{\n  "title": "LIFTOFF",\n  "style": "clean sci-fi ink, two-color",\n  "cast": ["NOVA", "HELIX"]\n}\n',
       "panels/1.json": '{ "shot": "wide", "scene": "Launch gantry at dawn; NOVA checks a wrist console.", "dialogue": "NOVA: Window is open. Sixty seconds." }\n',
@@ -611,7 +619,7 @@ const SCENARIOS = {
   goodbye: {
     label: "And yes — code",
     desc: "A rename across two files. One hunk has bad context — git apply rejects it; smartapply repairs just that file.",
-    goal: "Rename greet to farewell and say goodbye instead of hello",
+    goal: "Say goodbye instead of hello",
     files: {
       "greet.py": 'def greet(name):\n    print("Hello, " + name + "!")\n',
       "main.py": 'from greet import greet\n\ndef main():\n    greet("World")\n\nif __name__ == "__main__":\n    main()\n',
@@ -641,6 +649,7 @@ $("modelinput").addEventListener("change", () => localStorage.setItem("pl_model"
 // redirect returns to the same origin.
 if (location.hostname === "127.0.0.1") location.hostname = "localhost";
 const REDIRECT_URI = location.origin + location.pathname;
+const REFERRAL_CODE = "FXrrGWE4"; // nano-gpt.com/r/FXrrGWE4 — attributes new accounts on OAuth sign-up too
 
 async function clientId() {
   const cached = JSON.parse(localStorage.getItem("pl_client") || "null");
@@ -653,7 +662,8 @@ async function clientId() {
 $("signin").addEventListener("click", async () => {
   try {
     if (location.protocol === "file:") throw new Error("OAuth needs the page served over http(s) — use the paste-a-key box instead.");
-    await beginSignIn({ clientId: await clientId(), redirectUri: REDIRECT_URI });
+    const authUrl = await beginSignIn({ clientId: await clientId(), redirectUri: REDIRECT_URI, redirect: false });
+    location.assign(authUrl + "&invitation_code=" + REFERRAL_CODE);
   } catch (e) { alert("Sign-in failed: " + e.message); }
 });
 $("keysave").addEventListener("click", () => {
