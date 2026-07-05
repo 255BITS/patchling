@@ -73,7 +73,8 @@ test('no-newline EOF restatement add is collapsed, not duplicated', () => {
 
 test('a genuine duplicate add at EOF is kept when the header count says so', () => {
   // Same shape, but the @@ header's new count (4) matches the literal reading,
-  // so the trailing add really does append a duplicate line.
+  // so the trailing add really does append a duplicate line — and its
+  // `\ No newline` marker means the result ends without a trailing newline.
   const original = 'package cfg\n\nconst Timeout = 30\nconst Retries = 3\nconst Debug = true';
   const patch =
     '@@ -2,4 +2,4 @@\n' +
@@ -86,7 +87,7 @@ test('a genuine duplicate add at EOF is kept when the header count says so', () 
     '\\ No newline at end of file';
   assert.equal(
     applyPatchToFile(original, patch),
-    'package cfg\n\nconst Timeout = 30\nconst Retries = 3\nconst Retries = 3\n',
+    'package cfg\n\nconst Timeout = 30\nconst Retries = 3\nconst Retries = 3',
   );
 });
 
