@@ -28,23 +28,29 @@ Run it with `npm run benchmark` (or `node benchmark/run.js [corpus.json]`).
 
 | outcome        | files | share |
 | -------------- | ----- | ----- |
-| clean-correct  | 110   | 81.5% |
-| clean-wrong    | 5     | 3.7%  |
-| fallback → LLM | 20    | 14.8% |
+| clean-correct  | 112   | 83.0% |
+| clean-wrong    | 0     | 0.0%  |
+| fallback → LLM | 23    | 17.0% |
 
-**~81% of files apply with zero LLM calls.** The remaining ~15% safely fall back.
+**83% of files apply with zero LLM calls, and silent corruption is zero.** The
+remaining 17% safely fall back to the LLM.
 
-The 5 "clean-wrong" rows are not silent corruption of valid diffs:
+The 5 former "clean-wrong" rows were resolved as follows:
 
-- 3 are the `malformed-markers` category — diffs with literal `++`/`--` body
-  markers (e.g. `++  console.error(msg)`). A `+` line can legitimately add text
-  that itself starts with `+`, so there is no deterministic way to know the diff
-  is malformed; these need the LLM but the applier can't tell. (Inherent.)
-- 2 (`multi-file-ts-context-mismatch-fallback`, `no-trailing-newline-delete-trailing-line`)
-  are **generator errors** — the LLM that produced the fixture computed an
-  `expected` that does not match its own diff. The applier output is correct.
-
-On valid diffs, silent corruption is effectively **zero**.
+- 3 `malformed-markers` diffs with literal `++` body markers (e.g.
+  `++  console.error(msg)`): a `++foo` line is ambiguous between a malformed
+  double-plus add of `foo` and a legitimate add of `+foo`, and either literal
+  reading silently corrupts the file under the other. `applyPatchToFile` now
+  returns `null` on `++` (non-`+++`) body lines so these fall back to the LLM.
+- `no-trailing-newline-delete-trailing-line`: git's "last line loses its
+  newline" pattern written with the kept line as *context* instead of a `-`/`+`
+  pair left a trailing `+<line>` that duplicated the kept line. When the `@@`
+  header's new-line count confirms the collapsed reading, the redundant
+  restatement add is now dropped — the file applies correctly.
+- `multi-file-ts-context-mismatch-fallback`: a **generator error** in the
+  corpus — the fixture's `expected` for `src/session.ts` dropped a `getSession`
+  function the diff never touched, which no patch semantics can produce. The
+  fixture's `expected` was corrected; the applier output was already right.
 
 ## Bugs this benchmark surfaced (now fixed)
 

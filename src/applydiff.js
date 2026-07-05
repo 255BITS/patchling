@@ -192,21 +192,35 @@ export function applyPatchToFile(originalContent, patch) {
     const line = patchLines[i];
     if (line.replace(/^\s+/, '').startsWith('@@')) {
       let origStart;
+      let declaredNewCount = null;
       if (line.trim() === '@@') {
         origStart = 1;
       } else {
         const m = line.trim().match(HUNK_HEADER_RE);
         if (!m) return null;
         origStart = m[1] !== undefined ? parseInt(m[1], 10) : 1;
+        if (m[3] !== undefined) {
+          declaredNewCount = m[4] !== undefined ? parseInt(m[4], 10) : 1;
+        }
       }
       const ops = [];
       i += 1;
       while (i < patchLines.length && !patchLines[i].replace(/^\s+/, '').startsWith('@@')) {
         const pline = patchLines[i];
         if (pline.startsWith('\\')) {
-          // "\ No newline at end of file" marker — ignore.
+          // "\ No newline at end of file" marker — record it on the op it
+          // annotates (the previous body line) so the collapse rule below can
+          // recognize git's end-of-file newline-change pattern.
+          if (ops.length) ops[ops.length - 1].noNewline = true;
         } else if (pline.startsWith(' ')) {
           ops.push({ kind: 'context', text: pline.slice(1) });
+        } else if (pline.startsWith('++') && !pline.startsWith('+++')) {
+          // A `++`-prefixed body line is ambiguous: it may be a malformed
+          // double-plus addition (LLM emitted `++foo` meaning "add foo") or a
+          // legitimate addition of a line whose content itself starts with
+          // `+`. Applying either reading risks silent corruption under the
+          // other, so refuse and let the caller fall back to the LLM.
+          return null;
         } else if (pline.startsWith('-')) {
           ops.push({ kind: 'del', text: pline.slice(1) });
         } else if (pline.startsWith('+')) {
@@ -217,6 +231,37 @@ export function applyPatchToFile(originalContent, patch) {
         }
         i += 1;
       }
+
+      // Git's "last line loses its trailing newline" pattern is canonically a
+      // del/add pair with identical text plus `\ No newline` markers. Sloppy
+      // diffs write the old copy as *context* instead, leaving a trailing
+      // `+<line>` that duplicates the last context line:
+      //     ` const Retries = 3`      <- kept line
+      //     `-const Debug = true`     <- \ No newline at end of file
+      //     `+const Retries = 3`      <- \ No newline at end of file
+      // Applied literally this duplicates "const Retries = 3". When the final
+      // op is such a no-newline add restating the last context line across
+      // only deletions, and the @@ header's new-line count confirms the
+      // collapsed reading (one line fewer than the literal reading), drop the
+      // redundant add — it only re-states the kept line's newline status.
+      if (declaredNewCount !== null && ops.length) {
+        const last = ops[ops.length - 1];
+        if (last.kind === 'add' && last.noNewline) {
+          let ctxIdx = -1;
+          for (let j = ops.length - 2; j >= 0; j--) {
+            if (ops[j].kind === 'context') {
+              ctxIdx = j;
+              break;
+            }
+            if (ops[j].kind !== 'del') break; // only deletions may intervene
+          }
+          if (ctxIdx !== -1 && ctxIdx < ops.length - 2 && ops[ctxIdx].text === last.text) {
+            const literalNewCount = ops.filter((o) => o.kind !== 'del').length;
+            if (declaredNewCount === literalNewCount - 1) ops.pop();
+          }
+        }
+      }
+
       hunks.push({ hint: origStart - 1, ops });
     } else {
       i += 1;
