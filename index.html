@@ -114,11 +114,25 @@
       return JSON.parse($('files').value);
     }
 
+    // Stream the raw model output into #diffOut as tokens arrive, then
+    // replace it with the extracted diff once generation finishes.
+    function makeDiffStreamer() {
+      const out = $('diffOut');
+      out.textContent = 'Generating…';
+      let streamed = '';
+      return (text) => {
+        streamed += text;
+        out.textContent = streamed;
+      };
+    }
+
     $('genBtn').onclick = async () => {
-      $('diffOut').textContent = 'Generating…';
       try {
         const env = buildEnvironment(readFiles());
-        const diff = await generateDiff(env, $('goal').value, { model: $('model').value.trim() || DEFAULT_MODEL });
+        const diff = await generateDiff(env, $('goal').value, {
+          model: $('model').value.trim() || DEFAULT_MODEL,
+          onToken: makeDiffStreamer(),
+        });
         $('diffOut').textContent = diff || '(empty diff)';
       } catch (e) {
         $('diffOut').textContent = `Error: ${e.message}`;
@@ -126,13 +140,15 @@
     };
 
     $('applyBtn').onclick = async () => {
-      $('diffOut').textContent = 'Generating…';
       $('filesOut').textContent = '…';
       try {
         const files = readFiles();
         const env = buildEnvironment(files);
         const model = $('model').value.trim() || DEFAULT_MODEL;
-        const diff = await generateDiff(env, $('goal').value, { model });
+        const diff = await generateDiff(env, $('goal').value, {
+          model,
+          onToken: makeDiffStreamer(),
+        });
         $('diffOut').textContent = diff || '(empty diff)';
         const updated = await smartapply(diff, files, { model });
         $('filesOut').textContent = JSON.stringify(updated, null, 2);

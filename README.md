@@ -94,6 +94,7 @@ Low-level helpers are also exported: `generatePkce`, `buildAuthorizeUrl`, `excha
 Builds the prompt, calls the LLM, and returns the unified diff extracted from the ` ```diff ` block(s) of the response.
 
 - `opts.model`, `opts.temperature`, `opts.maxTokens`, `opts.apiKey`, `opts.baseUrl`, `opts.prepend`, `opts.images`
+- `opts.onToken` — `(text) => void` streaming callback. When provided, the completion is streamed (SSE) and called once per token as it arrives; the returned promise still resolves to the extracted diff. Tokens are the raw model output, which may include prose around the ` ```diff ` block.
 - `opts.callLlm` — inject a custom/mock completion client (used heavily in tests).
 - `opts.onUsage` — optional callback invoked with `{ promptTokens, completionTokens, totalTokens }` after the LLM call completes, so callers can surface cost/usage without changing the `Promise<string>` return type.
 
@@ -101,6 +102,7 @@ Builds the prompt, calls the LLM, and returns the unified diff extracted from th
 Applies a diff to an in-memory file map with per-file, LLM-assisted conflict resolution (runs files concurrently). Handles creation, modification, and deletion; `<think>…</think>` and reasoning preambles are stripped automatically. Returns a **new** map; deleted files are omitted.
 
 - `opts.model`, `opts.apiKey`, `opts.baseUrl`, `opts.maxTokens`
+- `opts.onToken` — `(text, path) => void` streaming callback for LLM-resolved files. Files stream concurrently, so calls for different files interleave; use the `path` argument to demultiplex. Files applied by the deterministic fast path emit no tokens.
 - `opts.callLlmForApply` — inject a custom/mock single-file applier.
 
 ### `applyDiff(files, diffText) → { changed, files }`
