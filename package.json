@@ -25,11 +25,11 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/255BITS/gptdiff-js.git"
+    "url": "git+https://github.com/255BITS/patchling.git"
   },
-  "homepage": "https://github.com/255BITS/gptdiff-js#readme",
+  "homepage": "https://github.com/255BITS/patchling#readme",
   "bugs": {
-    "url": "https://github.com/255BITS/gptdiff-js/issues"
+    "url": "https://github.com/255BITS/patchling/issues"
   },
   "scripts": {
     "prepublishOnly": "npm test",

@@ -38,7 +38,7 @@
   <rect width="960" height="520" rx="12" fill="url(#bg)" stroke="#30363d" stroke-width="1"/>
 
   <!-- Title -->
-  <text x="480" y="52" text-anchor="middle" fill="#e6edf3" font-size="26" font-weight="700" letter-spacing="-0.5">gptdiff-js</text>
+  <text x="480" y="52" text-anchor="middle" fill="#e6edf3" font-size="26" font-weight="700" letter-spacing="-0.5">patchling</text>
   <text x="480" y="78" text-anchor="middle" fill="#8b949e" font-size="14" font-weight="400">Smart Diffs, Applied Intelligently</text>
 
   <!-- Separator line -->
