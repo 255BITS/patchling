@@ -4,10 +4,18 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>patchling — give your app a “describe the change” box</title>
-<meta name="description" content="patchling is a small library for natural-language editing of anything file-shaped: hand it files and a plain-English goal, get the transformed files back. Browser, Node, and Python." />
+<meta name="description" content="patchling is a small library for natural-language editing: hand it your files and a plain-English goal, get the changed files back. Browser, Node, and Python." />
 <meta property="og:title" content="patchling — give your app a “describe the change” box" />
-<meta property="og:description" content="Files in, plain English in, transformed files out. A function call you embed — not an agent. Exact patching first, scoped LLM repair only where needed. Try it in your browser, no key needed." />
+<meta property="og:description" content="Files in, plain English in, changed files out. A function call you embed — not an agent. Exact patching first, scoped LLM repair only where needed. Try it in your browser, no key needed." />
 <meta property="og:url" content="https://patchling.app/" />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="https://patchling.app/og-card.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="A rocket-launch scene turning from day to night beside a healed diff, with the patchling logo" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="patchling — give your app a “describe the change” box" />
+<meta name="twitter:image" content="https://patchling.app/og-card.png" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A9%B9%3C/text%3E%3C/svg%3E" />
 <style>
   :root {
@@ -186,6 +194,13 @@
   .badge.prod { background: var(--add-bg); color: var(--add); }
   .upsell { margin-top: .8rem; font-size: .82rem; padding: .6rem .75rem; border-radius: .6rem; background: var(--accent-soft); display: none; }
 
+  /* the punchline, shown only after the run: what would have failed, and what healed */
+  #verdict { display: none; margin-top: .8rem; border: 1px solid var(--line); border-radius: .6rem; overflow: hidden; }
+  #verdict .vline { margin: 0; padding: .45rem .75rem; font-size: .8rem; }
+  #verdict .vline.bad { color: var(--del); background: var(--del-bg); }
+  #verdict .vline.ok { color: var(--add); background: var(--add-bg); }
+  #verdict .vwhy { margin: 0; padding: .5rem .75rem; font-size: .8rem; color: var(--muted); background: var(--panel2); }
+
   /* tucked-away controls: the point first, the knobs on request */
   .advanced { margin-top: .9rem; border-top: 1px solid var(--line); padding-top: .55rem; }
   .advanced details { font-size: .84rem; }
@@ -224,6 +239,14 @@
   .step h3 { margin: 0 0 .35rem; font-size: 1rem; }
   .step h3 code { font-size: .92em; }
   .step p { margin: 0; font-size: .9rem; color: var(--muted); }
+
+  .snippet { margin-top: 1.5rem; }
+  .snippet .bar button {
+    margin-left: auto; font: inherit; font-size: .72rem; border: 1px solid var(--line); background: var(--panel);
+    color: var(--muted); border-radius: .4rem; padding: .1rem .5rem; cursor: pointer;
+  }
+  .snippet .bar button:hover { color: var(--ink); border-color: var(--accent); }
+  .snippet pre { font-size: 13px; }
 
   .notagent { margin-top: 2rem; padding: 1.1rem 1.3rem; border-left: 3px solid var(--accent); background: var(--panel); border-radius: 0 .8rem .8rem 0; }
   .notagent p { margin: 0; color: var(--muted); }
@@ -287,7 +310,7 @@
   <div>
     <p class="kicker">files in · plain English · files out</p>
     <h1>Give your app a <span class="acc">“describe the change”</span> box.</h1>
-    <p class="sub">patchling is a small library that turns a plain-English sentence into an applied, multi-file change. Hand it your app's state as a <code class="inline">{ path: content }</code> map — code, an SVG scene, a comic's panels, a character's soul — and get the transformed files back. <b>No agent, no server, no filesystem:</b> call it, and control returns to your code.</p>
+    <p class="sub">patchling is a small library that turns a plain-English sentence into an applied, multi-file change. Hand it your files, get the changed files back — code, artwork, game state, whatever your app keeps in text. <b>No agent, no server, no filesystem:</b> one function call, and control returns to your code.</p>
     <div class="installs">
       <span class="pill"><span class="lang">js</span><code>npm install patchling</code><button data-copy="npm install patchling">copy</button></span>
       <span class="pill"><span class="lang">py</span><code>pip install patchling</code><button data-copy="pip install patchling">copy</button></span>
@@ -316,6 +339,7 @@
         <pre id="diffpane"></pre>
       </div>
       <div id="results"></div>
+      <div id="verdict"></div>
       <div class="upsell" id="upsell">
         That was the real engine — streamed diff, deterministic patch, scoped LLM repair. <code class="inline">npm install patchling</code> puts it in your app, or <a href="#" id="upsell-real">run it live with your own words</a>.
       </div>
@@ -341,7 +365,7 @@
               <label for="modelinput" style="font-size:.78rem;color:var(--muted)">model</label>
               <input id="modelinput" class="mono" />
             </div>
-            <p class="authnote">Keys come from <a href="https://nano-gpt.com/r/FXrrGWE4" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API. New to NanoGPT? <a href="https://nano-gpt.com/r/FXrrGWE4" target="_blank" rel="noopener">create an account →</a> — pay-per-use, no subscription. Your key stays in this browser (localStorage) and is sent only to nano-gpt.com. OAuth sign-in requires the page to be served over http(s).</p>
+            <p class="authnote">Sign-in is OAuth (PKCE) straight from this page to NanoGPT: the token is issued to <i>your</i> browser, lives in localStorage, and every request goes browser → nano-gpt.com directly. There's no patchling server to trust because there is no patchling server. Prefer a key? <a href="https://nano-gpt.com/r/FXrrGWE4" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API — pay-per-use, no subscription. NanoGPT links on this page carry our referral code. OAuth needs the page served over http(s).</p>
           </div>
         </details>
       </div>
@@ -402,6 +426,27 @@
       <h3><code>smartapply(diff, files)</code></h3>
       <p>Exact context-matched patching first; an LLM rewrite for only the files that fail. Returns a <b>new</b> map — originals are never mutated, and failures never half-apply.</p>
     </div>
+  </div>
+
+  <div class="window snippet">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">the whole integration</span><button data-copy='import { buildEnvironment, generateDiff, smartapply } from "patchling";
+
+const files = { "scene.svg": svg, "style.css": css }; // any { path: content } map
+
+const diff = await generateDiff(buildEnvironment(files),
+  "Make it a night launch", { apiKey, model });
+const next = await smartapply(diff, files);           // a new map — files is untouched
+
+render(next); // your code decides what "apply" means'>copy</button></div>
+    <pre><span class="kw">import</span> { buildEnvironment, generateDiff, smartapply } <span class="kw">from</span> <span class="hdr">"patchling"</span>;
+
+<span class="kw">const</span> files = { <span class="hdr">"scene.svg"</span>: svg, <span class="hdr">"style.css"</span>: css }; <span class="cmt">// any { path: content } map</span>
+
+<span class="kw">const</span> diff = <span class="kw">await</span> generateDiff(buildEnvironment(files),
+  <span class="hdr">"Make it a night launch"</span>, { apiKey, model });
+<span class="kw">const</span> next = <span class="kw">await</span> smartapply(diff, files);           <span class="cmt">// a new map — files is untouched</span>
+
+render(next); <span class="cmt">// your code decides what "apply" means</span></pre>
   </div>
 
   <div class="notagent">
@@ -533,7 +578,8 @@ const NIGHT_CSS = `.sky { fill: #8ecae6; }
 const SCENARIOS = {
   night: {
     label: "Restyle a scene",
-    desc: "The pre-recorded model reply gets style.css slightly wrong — git apply would reject it. patchling heals it and the scene turns to night.",
+    desc: "Two files make this scene — one sentence turns it to night. Watch the diff stream in and apply.",
+    reveal: "The model's diff had context that didn't match style.css — git apply would have rejected it. patchling repaired just that file with a scoped LLM pass and applied the rest without spending a token.",
     goal: "Make it a night launch",
     files: {
       "scene.svg": NIGHT_SCENE,
@@ -556,7 +602,8 @@ const SCENARIOS = {
   },
   character: {
     label: "Direct a character",
-    desc: "Nothing here is code — one sentence rewrites the character's mood and continues the script.",
+    desc: "Nothing here is code — a character made of three markdown files. Direct the scene.",
+    reveal: "One diff rewrote mood.md and extended chat.md in a single move. No code anywhere — the “app” is just files, which is the point.",
     goal: "The lab loses power",
     files: {
       "soul.md": "MARVIS — a sardonic lab assistant. Loyal, theatrical, allergic to being thanked.\n",
@@ -584,7 +631,8 @@ const SCENARIOS = {
   },
   comic: {
     label: "Add a comic panel",
-    desc: "One diff edits panel 2 and creates panels/3.json out of thin air — new files, applied atomically.",
+    desc: "A comic page made of JSON panels. Ask for a story beat and watch the page redraw.",
+    reveal: "panels/3.json didn't exist before the run — the diff created it out of thin air, applied atomically alongside the panel-2 edit.",
     goal: "End the page on a cliffhanger",
     files: {
       "config.json": '{\n  "title": "LIFTOFF",\n  "style": "clean sci-fi ink, two-color",\n  "cast": ["NOVA", "HELIX"]\n}\n',
@@ -618,7 +666,8 @@ const SCENARIOS = {
   },
   goodbye: {
     label: "And yes — code",
-    desc: "A rename across two files. One hunk has bad context — git apply rejects it; smartapply repairs just that file.",
+    desc: "A rename across two Python files. The diff has to update the definition and the call site together.",
+    reveal: "One hunk's context didn't match main.py — git apply rejects that outright. smartapply repaired only that file; greet.py applied deterministically.",
     goal: "Say goodbye instead of hello",
     files: {
       "greet.py": 'def greet(name):\n    print("Hello, " + name + "!")\n',
@@ -762,6 +811,8 @@ function clearOutputs() {
   $("diffpane").textContent = "";
   $("diffsrc").textContent = "";
   $("results").innerHTML = "";
+  $("verdict").style.display = "none";
+  $("verdict").innerHTML = "";
   $("status").style.display = "none";
   $("upsell").style.display = "none";
   $("resetnote").style.display = "none";
@@ -839,6 +890,48 @@ function resultMsg(text) {
   p.className = "msg";
   p.textContent = text;
   $("results").replaceChildren(p);
+}
+
+// The punchline, told only after it happened: which files git apply would
+// have bounced, and what smartapply did about it. Built from the actual run
+// outcome, so it's just as true in real mode as in the canned demo.
+function renderVerdict(perFile, inputFiles, updated, llmResolved) {
+  const v = $("verdict");
+  v.innerHTML = "";
+  const repaired = [...llmResolved].filter((p) => p in updated);
+  const created = Object.keys(updated).filter((p) => !(p in inputFiles));
+  const det = perFile
+    .map(([p]) => p)
+    .filter((p) => p in updated && p in inputFiles && !llmResolved.has(p) && updated[p] !== inputFiles[p]);
+
+  const line = (cls, text) => {
+    const p = document.createElement("p");
+    p.className = "vline mono " + cls;
+    p.textContent = text;
+    v.appendChild(p);
+  };
+
+  if (repaired.length) {
+    line("bad", "✗ git apply — error: patch failed: " + repaired.join(", "));
+    const okBits = ["✓ smartapply — " + repaired.join(", ") + ": LLM-repaired"];
+    if (det.length) okBits.push(det.join(", ") + ": deterministic, 0 tokens");
+    if (created.length) okBits.push(created.join(", ") + ": created");
+    line("ok", okBits.join(" · "));
+  } else {
+    const okBits = [];
+    if (det.length) okBits.push(det.join(", ") + ": deterministic, 0 tokens");
+    if (created.length) okBits.push(created.join(", ") + ": created");
+    if (!okBits.length) okBits.push("nothing to change");
+    line("ok", "✓ smartapply — " + okBits.join(" · "));
+  }
+
+  if (mode === "demo" && SCENARIOS[scenarioKey].reveal) {
+    const why = document.createElement("p");
+    why.className = "vwhy";
+    why.textContent = SCENARIOS[scenarioKey].reveal;
+    v.appendChild(why);
+  }
+  v.style.display = "block";
 }
 
 function setBadge(card, cls, text, title) {
@@ -960,6 +1053,8 @@ async function run() {
     files = { ...updated };
     renderEditors();
     renderPreview();
+
+    renderVerdict(perFile, inputFiles, updated, llmResolved);
 
     $("phase").textContent = "done ✓ — the preview and files above are the new map";
     document.querySelector("#status .spin").style.display = "none";
