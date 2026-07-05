@@ -144,6 +144,10 @@ export async function callLlmForDiff(systemPrompt, userPrompt, filesContent, mod
  * @param {number} [opts.budgetTokens]
  * @param {Array}  [opts.images]
  * @param {Function} [opts.callLlm]  injectable LLM client (for testing)
+ * @param {Function} [opts.onUsage]  optional callback invoked with
+ *   { promptTokens, completionTokens, totalTokens } after the LLM call
+ *   completes, so callers can surface cost/usage without changing the
+ *   return type of this function.
  * @returns {Promise<string>} the unified diff text
  */
 export async function generateDiff(environment, goal, opts = {}) {
@@ -151,17 +155,28 @@ export async function generateDiff(environment, goal, opts = {}) {
   const prepend = opts.prepend ? opts.prepend + '\n' : '';
   const systemPrompt = prepend + 'Output a full unified git diff into a "```diff" block.';
 
-  const { diff } = await callLlmForDiff(systemPrompt, goal, environment, model, {
-    temperature: opts.temperature ?? 1.0,
-    // No default cap: let the model emit its full diff (avoids silent truncation
-    // that produces an unparseable diff). Callers may still pass an explicit maxTokens.
-    maxTokens: opts.maxTokens ?? null,
-    apiKey: opts.apiKey,
-    baseUrl: opts.baseUrl,
-    budgetTokens: opts.budgetTokens ?? null,
-    images: opts.images ?? null,
-    callLlm: opts.callLlm,
-  });
+  const { diff, promptTokens, completionTokens, totalTokens } = await callLlmForDiff(
+    systemPrompt,
+    goal,
+    environment,
+    model,
+    {
+      temperature: opts.temperature ?? 1.0,
+      // No default cap: let the model emit its full diff (avoids silent truncation
+      // that produces an unparseable diff). Callers may still pass an explicit maxTokens.
+      maxTokens: opts.maxTokens ?? null,
+      apiKey: opts.apiKey,
+      baseUrl: opts.baseUrl,
+      budgetTokens: opts.budgetTokens ?? null,
+      images: opts.images ?? null,
+      callLlm: opts.callLlm,
+    },
+  );
+
+  if (typeof opts.onUsage === 'function') {
+    opts.onUsage({ promptTokens, completionTokens, totalTokens });
+  }
+
   return diff;
 }
 

@@ -81,6 +81,7 @@ Builds the prompt, calls the LLM, and returns the unified diff extracted from th
 
 - `opts.model`, `opts.temperature`, `opts.maxTokens`, `opts.apiKey`, `opts.baseUrl`, `opts.prepend`, `opts.images`
 - `opts.callLlm` — inject a custom/mock completion client (used heavily in tests).
+- `opts.onUsage` — optional callback invoked with `{ promptTokens, completionTokens, totalTokens }` after the LLM call completes, so callers can surface cost/usage without changing the `Promise<string>` return type.
 
 ### `smartapply(diffText, files, opts?) → Promise<{ path: content }>`
 Applies a diff to an in-memory file map with per-file, LLM-assisted conflict resolution (runs files concurrently). Handles creation, modification, and deletion; `<think>…</think>` and reasoning preambles are stripped automatically. Returns a **new** map; deleted files are omitted.

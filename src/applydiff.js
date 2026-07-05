@@ -204,7 +204,9 @@ export function applyPatchToFile(originalContent, patch) {
       while (i < patchLines.length && !patchLines[i].replace(/^\s+/, '').startsWith('@@')) {
         const pline = patchLines[i];
         if (pline.startsWith('\\')) {
-          // "\ No newline at end of file" marker — ignore.
+          // "\ No newline at end of file" marker — tag the preceding op so the
+          // final assembly step knows not to append a trailing newline there.
+          if (ops.length) ops[ops.length - 1].noNewline = true;
         } else if (pline.startsWith(' ')) {
           ops.push({ kind: 'context', text: pline.slice(1) });
         } else if (pline.startsWith('-')) {
@@ -249,24 +251,41 @@ export function applyPatchToFile(originalContent, patch) {
     return best;
   };
 
+  // Track whether the final line pushed to `newLines` should be left without a
+  // trailing newline in the reassembled output. This is true either because
+  // the patch explicitly marks that line with "\ No newline at end of file",
+  // or because the line is carried over verbatim from the original file's own
+  // unmodified last line and the original file itself had no trailing newline.
+  const originalNoTrailingNewline =
+    !!originalContent && originalContent.length > 0 && !/[\n\r]$/.test(originalContent);
+  let endsWithoutNewline = false;
+
   const newLines = [];
   let cursor = 0;
+
+  const pushOriginal = (k) => {
+    newLines.push(originalLines[k]);
+    endsWithoutNewline = k === originalLines.length - 1 && originalNoTrailingNewline;
+  };
+
   for (const hunk of hunks) {
     const block = oldBlockOf(hunk.ops);
     const pos = findBlock(block, cursor, hunk.hint);
     if (pos === null) return null;
 
     // Copy untouched lines between the previous hunk and this one.
-    for (let k = cursor; k < pos; k++) newLines.push(originalLines[k]);
+    for (let k = cursor; k < pos; k++) pushOriginal(k);
 
     let idx = pos;
     for (const op of hunk.ops) {
       if (op.kind === 'add') {
         newLines.push(op.text);
+        endsWithoutNewline = !!op.noNewline;
       } else if (op.kind === 'del') {
         idx += 1; // consume the original line without emitting it
       } else {
-        newLines.push(originalLines[idx]); // context: keep the original line
+        pushOriginal(idx); // context: keep the original line
+        if (op.noNewline) endsWithoutNewline = true;
         idx += 1;
       }
     }
@@ -274,10 +293,10 @@ export function applyPatchToFile(originalContent, patch) {
   }
 
   // Append remaining original lines.
-  for (let k = cursor; k < originalLines.length; k++) newLines.push(originalLines[k]);
+  for (let k = cursor; k < originalLines.length; k++) pushOriginal(k);
 
   let content = newLines.join('\n');
-  if (content) content += '\n';
+  if (content && !endsWithoutNewline) content += '\n';
   return content;
 }
 
