@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>patchling — apply the AI diffs git apply rejects</title>
-<meta name="description" content="patchling is a bounded primitive for natural-language code transformation. Files in, files out: generateDiff turns a plain-English goal into a unified git diff, and smartapply melds it into your source — even when git apply would reject it." />
-<meta property="og:title" content="patchling — apply the AI diffs git apply rejects" />
-<meta property="og:description" content="Files in, files out. generateDiff turns a plain-English goal into a git diff; smartapply applies it even when git apply would reject it. A library you embed, not an agent. Try it live — no key needed." />
+<title>patchling — give your app a “describe the change” box</title>
+<meta name="description" content="patchling is a small library for natural-language editing of anything file-shaped: hand it files and a plain-English goal, get the transformed files back. Browser, Node, and Python." />
+<meta property="og:title" content="patchling — give your app a “describe the change” box" />
+<meta property="og:description" content="Files in, plain English in, transformed files out. A function call you embed — not an agent. Exact patching first, scoped LLM repair only where needed. Try it in your browser, no key needed." />
 <meta property="og:url" content="https://patchling.app/" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A9%B9%3C/text%3E%3C/svg%3E" />
 <style>
@@ -53,7 +53,7 @@
   * { box-sizing: border-box; }
   /* Grid/flex children must be allowed to shrink below their content width,
      or wide <pre> blocks force horizontal scroll on small screens. */
-  .hero > div, .out, .editor, .eco, .step, .filecard { min-width: 0; }
+  .hero > div, .out, .editor, .eco, .step, .filecard, .gcard, .bench > div, .whygrid > div { min-width: 0; }
   html, body { margin: 0; }
   body {
     background: var(--bg); color: var(--ink);
@@ -68,7 +68,7 @@
   h1, h2, h3 { line-height: 1.2; letter-spacing: -0.015em; }
   h2 { font-size: 1.7rem; margin: 0 0 .4rem; }
   .kicker { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); margin: 0 0 .6rem; }
-  .lead { color: var(--muted); max-width: 60ch; margin: 0 0 1.4rem; }
+  .lead { color: var(--muted); max-width: 62ch; margin: 0 0 1.4rem; }
   code.inline { background: var(--code-bg); border: 1px solid var(--line); border-radius: .35rem; padding: .08rem .35rem; font-size: .88em; }
 
   /* ---------- nav ---------- */
@@ -81,13 +81,12 @@
   .logo { width: 1.35rem; height: 1.35rem; display: inline-block; }
 
   /* ---------- hero ---------- */
-  .hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 3rem; align-items: center; margin-top: 2.5rem; }
-  .hero h1 { font-size: clamp(2rem, 4.6vw, 3.1rem); margin: .2rem 0 .9rem; font-weight: 800; }
-  .hero h1 .rej { color: var(--del); text-decoration: line-through; text-decoration-thickness: 3px; text-decoration-color: var(--del); }
+  .hero { display: grid; grid-template-columns: 1.02fr .98fr; gap: 3rem; align-items: center; margin-top: 2.5rem; }
+  .hero h1 { font-size: clamp(2rem, 4.6vw, 3rem); margin: .2rem 0 .9rem; font-weight: 800; }
   .hero h1 .acc { color: var(--accent); }
   .hero .sub { color: var(--muted); font-size: 1.06rem; max-width: 54ch; }
   .hero .sub b { color: var(--ink); }
-  .formerly { font-size: .85rem; color: var(--muted); margin-top: 1rem; }
+  .heronote { font-size: .85rem; color: var(--muted); margin-top: 1rem; }
 
   .installs { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1.4rem 0 1.1rem; }
   .pill {
@@ -125,6 +124,7 @@
   .window .ok { color: var(--add); font-weight: 700; }
   .window .bad { color: var(--del); font-weight: 700; }
   .window .cmt { color: var(--hdr); }
+  .window .kw { color: var(--accent); }
 
   /* ---------- playground ---------- */
   .play-card { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; box-shadow: var(--shadow); padding: 1.2rem 1.2rem 1.4rem; }
@@ -148,7 +148,9 @@
   #scdesc { font-size: .86rem; color: var(--muted); margin: 0 0 1rem; }
   #scdesc code { font-size: .82em; }
 
-  .editors { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
+  .bench { display: grid; grid-template-columns: 1.35fr .85fr; gap: .9rem; align-items: start; }
+  .bench.nopreview { grid-template-columns: 1fr; }
+  .editors { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .9rem; }
   .editor label { display: flex; align-items: baseline; gap: .5rem; font-size: .78rem; color: var(--muted); margin-bottom: .3rem; }
   .editor label .path { font-weight: 700; color: var(--ink); }
   .editor textarea {
@@ -156,6 +158,14 @@
     background: var(--code-bg); border: 1px solid var(--line); border-radius: .55rem; padding: .7rem .8rem;
   }
   .editor textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+
+  #previewwrap { position: sticky; top: 1rem; }
+  #previewwrap .plabel { font-size: .78rem; color: var(--muted); margin-bottom: .3rem; display: block; }
+  #previewwrap .plabel b { color: var(--ink); }
+  #preview {
+    width: 100%; height: 260px; border: 1px solid var(--line); border-radius: .55rem;
+    background: var(--code-bg); display: block;
+  }
 
   .goalrow { display: flex; gap: .7rem; margin-top: 1rem; flex-wrap: wrap; }
   .goalrow input {
@@ -190,7 +200,19 @@
   .badge.new { background: #8b5cf622; color: #8b5cf6; }
   .badge.gone { background: var(--del-bg); color: var(--del); }
   .badge.wait { background: var(--code-bg); color: var(--muted); }
+  .badge.prod { background: var(--add-bg); color: var(--add); }
   .upsell { margin-top: 1rem; font-size: .88rem; padding: .7rem .9rem; border-radius: .6rem; background: var(--accent-soft); display: none; }
+
+  /* ---------- built with it ---------- */
+  .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .9rem; margin-top: 1.5rem; }
+  .gcard {
+    display: block; background: var(--panel); border: 1px solid var(--line); border-radius: .8rem;
+    padding: 1rem 1.1rem; color: var(--ink);
+  }
+  .gcard:hover { text-decoration: none; border-color: var(--accent); }
+  .gcard h3 { margin: 0 0 .3rem; font-size: .98rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .gcard p { margin: 0; font-size: .85rem; color: var(--muted); }
+  .gcard .files { display: block; margin-top: .55rem; font-size: .72rem; color: var(--hdr); }
 
   /* ---------- how it works ---------- */
   .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1.5rem; }
@@ -199,6 +221,16 @@
   .step h3 { margin: 0 0 .35rem; font-size: 1rem; }
   .step h3 code { font-size: .92em; }
   .step p { margin: 0; font-size: .9rem; color: var(--muted); }
+
+  .notagent { margin-top: 2rem; padding: 1.1rem 1.3rem; border-left: 3px solid var(--accent); background: var(--panel); border-radius: 0 .8rem .8rem 0; }
+  .notagent p { margin: 0; color: var(--muted); }
+  .notagent p b { color: var(--ink); }
+  .notagent p + p { margin-top: .7rem; }
+
+  /* ---------- why it doesn't flake ---------- */
+  .whygrid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 2.2rem; align-items: center; margin-top: 1.5rem; }
+  .whygrid p { color: var(--muted); font-size: .96rem; margin: 0 0 1rem; }
+  .whygrid p b { color: var(--ink); }
 
   .survives { margin-top: 2.2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .6rem; }
   .survives div { display: flex; gap: .55rem; align-items: baseline; font-size: .92rem; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: .6rem; padding: .55rem .8rem; }
@@ -218,6 +250,10 @@
   @media (max-width: 900px) {
     .hero { grid-template-columns: 1fr; gap: 2rem; }
     .steps { grid-template-columns: 1fr; }
+    .whygrid { grid-template-columns: 1fr; gap: 1.4rem; }
+    .bench { grid-template-columns: 1fr; }
+    /* On phones the visual payoff comes first, raw file panes after. */
+    #previewwrap { position: static; order: -1; }
   }
   @media (max-width: 760px) {
     .editors, .outs, .ecosys { grid-template-columns: 1fr; }
@@ -235,50 +271,45 @@
   </a>
   <span class="spacer"></span>
   <a class="nl" href="#playground">Playground</a>
+  <a class="nl" href="#built">Built with it</a>
   <a class="nl" href="#how">How it works</a>
-  <a class="nl" href="https://255bits.github.io/patchling-examples/" target="_blank" rel="noopener">Demos</a>
   <a class="nl" href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">GitHub</a>
 </nav>
 
 <section class="hero">
   <div>
-    <p class="kicker">A bounded primitive, not an agent</p>
-    <h1>Apply the AI diffs <span class="rej">git&nbsp;apply</span>&nbsp;<span class="acc">rejects</span>.</h1>
-    <p class="sub">Files in, files out. Hand patchling a <code class="inline">{ path: content }</code> map and a plain-English goal: <b>generateDiff</b> returns a unified git diff, and <b>smartapply</b> melds it into your source — deterministically when it can, per-file LLM repair only when it must. Drifted line numbers, fuzzy hunks, renames, new files: applied.</p>
+    <p class="kicker">files in · plain English · files out</p>
+    <h1>Give your app a <span class="acc">“describe the change”</span> box.</h1>
+    <p class="sub">patchling is a small library that turns a plain-English sentence into an applied, multi-file change. Hand it your app's state as a <code class="inline">{ path: content }</code> map — code, an SVG scene, a comic's panels, a character's soul — and get the transformed files back. <b>No agent, no server, no filesystem:</b> call it, and control returns to your code.</p>
     <div class="installs">
       <span class="pill"><span class="lang">js</span><code>npm install patchling</code><button data-copy="npm install patchling">copy</button></span>
       <span class="pill"><span class="lang">py</span><code>pip install patchling</code><button data-copy="pip install patchling">copy</button></span>
     </div>
     <div class="ctas">
-      <a class="btn primary" href="#playground">▶ Run it in your browser — no key needed</a>
+      <a class="btn primary" href="#playground">▶ Watch a sentence change a scene — no key needed</a>
       <a class="btn" href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">GitHub</a>
     </div>
-    <p class="formerly">Zero-dependency ESM · runs in the browser and Node 18+ · formerly <b>gptdiff</b>.</p>
+    <p class="heronote">Zero-dependency ESM · runs in the browser and Node 18+ · Python too.</p>
   </div>
   <div class="window" aria-hidden="true">
-    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">the-diff-your-llm-actually-wrote.patch</span></div>
-    <pre><span class="hdr">--- a/main.py</span>
-<span class="hdr">+++ b/main.py</span>
-<span class="hdr">@@ -1,4 +1,4 @@</span>
-<span class="del">-from greet import greet</span>
-<span class="add">+from greet import farewell</span>
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">your-app.js</span></div>
+    <pre><span class="cmt">// your app's state — any files, not just code</span>
+<span class="kw">const</span> files = { <span class="hdr">"scene.svg"</span>: …, <span class="hdr">"style.css"</span>: … };
+<span class="kw">const</span> goal  = <span class="hdr">"make it a night launch — stars, glowing engine"</span>;
 
- def main():
-<span class="del">-    greet("world")   <b>← file says "World". oops.</b></span>
-<span class="add">+    farewell("world")</span>
+<span class="kw">const</span> diff = <span class="kw">await</span> generateDiff(buildEnvironment(files), goal);
+<span class="kw">const</span> next = <span class="kw">await</span> smartapply(diff, files);
+<span class="cmt">// a new map — atomic, your originals untouched</span>
 
-<span class="cmt">$ git apply changes.patch</span>
-<span class="bad">error: patch failed: main.py:1 ✗</span>
-
-<span class="cmt">&gt; await smartapply(diff, files)</span>
-<span class="ok">{ "greet.py": ✓ deterministic, "main.py": ✓ LLM-resolved }</span></pre>
+<span class="ok">   scene.svg  ✓ deterministic · 0 tokens</span>
+<span class="ok">   style.css  ✓ LLM-repaired</span> <span class="cmt">— git apply would have rejected it</span></pre>
   </div>
 </section>
 
 <section id="playground">
   <p class="kicker">Live playground</p>
-  <h2>See it run. Right here.</h2>
-  <p class="lead">This page imports <code class="inline">patchling</code> straight from <a href="https://esm.sh/patchling" target="_blank" rel="noopener">esm.sh</a> and runs the real <code class="inline">generateDiff → smartapply</code> pipeline. Demo mode replays a canned model response with simulated streaming — no key, no network calls. Sign in for real transformations on your own code.</p>
+  <h2>Type a change. Watch it land.</h2>
+  <p class="lead">This page imports <code class="inline">patchling</code> straight from <a href="https://esm.sh/patchling" target="_blank" rel="noopener">esm.sh</a> and runs the real <code class="inline">generateDiff → smartapply</code> pipeline in your browser. Demo mode replays a pre-recorded model response — free, instant, no key — through the real diff parser and apply engine. Switch to <b>Real</b> to transform anything with your own words.</p>
 
   <div class="play-card">
     <div class="modes" role="tablist">
@@ -286,7 +317,7 @@
       <button id="mode-real">Real — your NanoGPT key</button>
     </div>
 
-    <p id="demonote">▶ <b>Canned replay.</b> The "model response" below is pre-baked and streamed locally, but the diff parsing and <code class="inline">smartapply</code> engine are the real library running in your browser.</p>
+    <p id="demonote">▶ <b>Pre-recorded reply, real engine.</b> The model response below is canned and streamed locally — but the diff parser and <code class="inline">smartapply</code> engine you're watching are the actual library running in this page.</p>
 
     <div id="realauth">
       <div class="row" id="signedout">
@@ -309,13 +340,19 @@
     <div class="scenarios" id="scenarios"></div>
     <p id="scdesc"></p>
 
-    <div class="editors" id="editors"></div>
+    <div class="bench" id="bench">
+      <div class="editors" id="editors"></div>
+      <div id="previewwrap">
+        <span class="plabel"><b>live preview</b> — rendered from the files on the left</span>
+        <iframe id="preview" sandbox="" title="live preview of the file map"></iframe>
+      </div>
+    </div>
 
     <div class="goalrow">
       <input id="goal" placeholder="What should change? Plain English." />
       <button class="btn primary" id="run">▶ Diff &amp; smartapply</button>
     </div>
-    <p id="resetnote">Demo mode replays a canned response, so the files were reset to match the scenario. Switch to <b>Real</b> mode to transform your own edits.</p>
+    <p id="resetnote">Demo mode replays a canned response, so the files and goal were reset to match the scenario. Switch to <b>Real</b> mode to transform your own edits.</p>
 
     <div id="progress">
       <span class="spin">◐</span> <b id="phase">starting…</b> · ⏱ <span id="elapsed">0.0</span>s
@@ -334,34 +371,101 @@
     </div>
 
     <div class="upsell" id="upsell">
-      That whole sequence — streamed diff, deterministic patch, LLM repair of the broken hunk — was the real library. <a href="#" id="upsell-real">Switch to Real mode</a> to run it on your own files with your own goal, or <code class="inline">npm install patchling</code> to embed it.
+      Everything you just watched — streamed diff, deterministic patch, scoped LLM repair — was the real library running in your browser. <a href="#" id="upsell-real">Switch to Real mode</a> to transform your own files with your own words, or <code class="inline">npm install patchling</code> to put it in your app.
     </div>
+  </div>
+</section>
+
+<section id="built">
+  <p class="kicker">Built with it</p>
+  <h2>The files don't have to be code.</h2>
+  <p class="lead">Everything below is the same three calls pointed at different state. None of these are coding tools — they're products with a text box.</p>
+  <div class="gallery">
+    <a class="gcard" href="https://nanoodle.com" target="_blank" rel="noopener">
+      <h3>nanoodle <span class="badge prod">in production</span></h3>
+      <p>A visual AI workflow editor. Describe the change; the graph rewires.</p>
+      <span class="files mono">workflow state → English-editable</span>
+    </a>
+    <a class="gcard" href="https://255bits.github.io/patchling-examples/overlay.html" target="_blank" rel="noopener">
+      <h3>Stream overlay studio</h3>
+      <p>SVG layers + a GSAP timeline. One sentence restyles the whole broadcast; exports for OBS.</p>
+      <span class="files mono">layers/*.svg · overlay.js · config.json</span>
+    </a>
+    <a class="gcard" href="https://255bits.github.io/patchling-examples/object3d.html" target="_blank" rel="noopener">
+      <h3>3D object studio</h3>
+      <p>“Turn it into a glowing crystal” rewrites geometry, material and texture; exports .glb.</p>
+      <span class="files mono">object.js · material.js · texture.svg</span>
+    </a>
+    <a class="gcard" href="https://255bits.github.io/patchling-examples/comic.html" target="_blank" rel="noopener">
+      <h3>One-render comic</h3>
+      <p>“Raise the stakes” rewrites the art direction and adds panels; the page redraws itself.</p>
+      <span class="files mono">config.json · panels/*.json</span>
+    </a>
+    <a class="gcard" href="https://255bits.github.io/patchling-examples/marvis.html" target="_blank" rel="noopener">
+      <h3>MARVIS</h3>
+      <p>A character you direct. Its soul, mood and memory are plain files you own — it can't be deprecated.</p>
+      <span class="files mono">soul.md · mood.md · memory.md</span>
+    </a>
   </div>
 </section>
 
 <section id="how">
   <p class="kicker">How it works</p>
   <h2>Three calls. No filesystem. No agent loop.</h2>
-  <p class="lead">patchling is deliberately bounded: it transforms an in-memory file map and hands control straight back to you. You own the loop, the UI, and the storage.</p>
+  <p class="lead">Your app's state is the input. patchling transforms the map you hand it and hands back a new one — what you do with the result is your code's business.</p>
   <div class="steps">
     <div class="step">
       <span class="n">1</span>
       <h3><code>buildEnvironment(files)</code></h3>
-      <p>Serialize your <code class="inline">{ path: content }</code> map into the environment string the model sees. No disk access — it runs in the browser and Node 18+.</p>
+      <p>Hand it your files as a plain <code class="inline">{ path: content }</code> object — it becomes the project the model sees. No disk access; runs in the browser and Node 18+.</p>
     </div>
     <div class="step">
       <span class="n">2</span>
       <h3><code>generateDiff(env, goal)</code></h3>
-      <p>One LLM call returns a unified git diff. Stream it live with <code class="inline">onToken</code>, meter it with <code class="inline">onUsage</code>, or inject your own client with <code class="inline">callLlm</code>.</p>
+      <p>One LLM call returns a unified git diff — minimal, reviewable, streamable. Stream it with <code class="inline">onToken</code>, meter it with <code class="inline">onUsage</code>, or inject your own client with <code class="inline">callLlm</code>.</p>
     </div>
     <div class="step">
       <span class="n">3</span>
       <h3><code>smartapply(diff, files)</code></h3>
-      <p>Deterministic patching first — context-matched, tolerant of drifted line numbers. Only files that still fail get a per-file LLM rewrite. Returns a <b>new</b> map; failures never partially write.</p>
+      <p>Exact context-matched patching first; an LLM rewrite for only the files that fail. Returns a <b>new</b> map — originals are never mutated, and failures never half-apply.</p>
     </div>
   </div>
 
-  <h2 style="margin-top:3rem;font-size:1.25rem">LLM diffs are sloppy. smartapply survives:</h2>
+  <div class="notagent">
+    <p><b>A function call, not an agent.</b> patchling never touches disk, never loops, never decides what to do next — one call in, one new file map out, and control returns to your code. That's what makes it embeddable: the AI-edit feature ships in <b>your</b> UI, on <b>your</b> storage, under <b>your</b> rules. Mock it (<code class="inline">callLlm</code>), meter it (<code class="inline">onUsage</code>), stream it (<code class="inline">onToken</code>), and diff its output byte-for-byte before you accept it.</p>
+    <p>Trust it the way you'd trust any function: verify the output. The <a href="https://255bits.github.io/patchling-examples/count.html" target="_blank" rel="noopener">count-to-100 demo</a> wraps patchling in the dumbest possible loop — <i>add 1, apply, assert n+1, a hundred times</i> — and shows exactly what every verified step costs. That's the intended shape: patchling is the transformation inside <b>your</b> loop, not a loop of its own.</p>
+  </div>
+</section>
+
+<section id="why">
+  <p class="kicker">Why it doesn't flake</p>
+  <h2>Why diffs — and why yours will apply.</h2>
+  <div class="whygrid">
+    <div>
+      <p><b>Why a diff, and not “just rewrite the file”?</b> A diff is the safest thing an LLM can say. It's minimal — the model writes what <i>changed</i>, not a fresh copy of your state to subtly corrupt. It's reviewable — show it to your user before you apply it. It streams, it's cheap, and untouched files cost nothing.</p>
+      <p><b>The catch: LLM diffs are sloppy.</b> Drifted line numbers, context that doesn't quite match, malformed headers. <code class="inline">git apply</code> rejects them. <code class="inline">smartapply</code> heals them instead — deterministic patching when the hunks match, a scoped per-file LLM repair only when they don't. The sloppiness becomes patchling's problem instead of yours.</p>
+    </div>
+    <div class="window" aria-hidden="true">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">the-diff-your-llm-actually-wrote.patch</span></div>
+      <pre><span class="hdr">--- a/main.py</span>
+<span class="hdr">+++ b/main.py</span>
+<span class="hdr">@@ -1,4 +1,4 @@</span>
+<span class="del">-from greet import greet</span>
+<span class="add">+from greet import farewell</span>
+
+ def main():
+<span class="del">-    greet("world")   <b>← file says "World". oops.</b></span>
+<span class="add">+    farewell("world")</span>
+
+<span class="cmt">$ git apply changes.patch</span>
+<span class="bad">error: patch failed: main.py:1 ✗</span>
+
+<span class="cmt">&gt; await smartapply(diff, files)</span>
+<span class="ok">{ "greet.py": ✓ deterministic, "main.py": ✓ LLM-repaired }</span></pre>
+    </div>
+  </div>
+
+  <h2 style="margin-top:3rem;font-size:1.25rem">smartapply survives:</h2>
   <div class="survives">
     <div>drifted <code class="inline">@@</code> line numbers</div>
     <div>context that doesn't quite match</div>
@@ -425,14 +529,122 @@ import { registerClient, beginSignIn, completeSignIn }
 const $ = (id) => document.getElementById(id);
 const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /* SCENARIOS:BEGIN — pre-baked demo-mode scenarios. `response` is the canned
    model reply streamed by the fake client; `applied` is what the fake apply
-   model returns for files whose hunk fails deterministic patching. */
+   model returns for files whose hunk fails deterministic patching; `preview`
+   (optional) renders the current file map into the sandboxed preview iframe. */
+const NIGHT_SCENE = `<svg viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <rect class="sky" width="320" height="200"/>
+  <circle class="sun" cx="260" cy="48" r="26"/>
+  <rect class="ground" y="168" width="320" height="32"/>
+  <g class="rocket">
+    <rect x="146" y="84" width="28" height="64" rx="10" class="hull"/>
+    <circle cx="160" cy="104" r="7" class="porthole"/>
+    <polygon points="146,86 160,58 174,86" class="nose"/>
+    <polygon points="150,148 160,172 170,148" class="flame"/>
+  </g>
+</svg>
+`;
+const NIGHT_CSS = `.sky { fill: #8ecae6; }
+.sun { fill: #ffb703; }
+.ground { fill: #74a57f; }
+.hull { fill: #e0e1dd; }
+.porthole { fill: #219ebc; }
+.nose { fill: #d62828; }
+.flame { fill: #fb8500; }
+`;
+
 const SCENARIOS = {
+  night: {
+    label: "Restyle a scene · heals a sloppy diff",
+    desc: "The canned model reply misremembers the current colors in style.css — models do this constantly, and git apply would reject those hunks. Watch scene.svg patch deterministically (0 tokens), style.css get one scoped LLM repair, and the scene turn to night.",
+    goal: "Make it a night launch — dark sky, stars, a moon, and a glowing engine flame",
+    files: {
+      "scene.svg": NIGHT_SCENE,
+      "style.css": NIGHT_CSS,
+    },
+    response: 'Turning day into night: the sun becomes a moon, stars go in, and everything is re-lit.\n\n```diff\n--- a/scene.svg\n+++ b/scene.svg\n@@ -2,3 +2,9 @@\n   <rect class="sky" width="320" height="200"/>\n-  <circle class="sun" cx="260" cy="48" r="26"/>\n+  <circle class="moon" cx="260" cy="48" r="22"/>\n+  <g class="stars">\n+    <circle cx="40" cy="36" r="2"/>\n+    <circle cx="96" cy="70" r="1.5"/>\n+    <circle cx="210" cy="24" r="2"/>\n+    <circle cx="284" cy="98" r="1.5"/>\n+  </g>\n   <rect class="ground" y="168" width="320" height="32"/>\n--- a/style.css\n+++ b/style.css\n@@ -1,2 +1,3 @@\n-.sky { fill: #87ceeb; }\n-.sun { fill: #ffd60a; }\n+.sky { fill: #0b1026; }\n+.moon { fill: #f4f1de; }\n+.stars circle { fill: #f4f1de; }\n@@ -7 +8 @@\n-.flame { fill: #ff6d00; }\n+.flame { fill: #ffd166; filter: drop-shadow(0 0 6px #ff9f1c); }\n```\n\nThe flame now glows against the dark sky.',
+    applied: {
+      "style.css": `.sky { fill: #0b1026; }
+.moon { fill: #f4f1de; }
+.stars circle { fill: #f4f1de; }
+.ground { fill: #24313a; }
+.hull { fill: #e0e1dd; }
+.porthole { fill: #ffd166; }
+.nose { fill: #d62828; }
+.flame { fill: #ffd166; filter: drop-shadow(0 0 6px #ff9f1c); }
+`,
+    },
+    preview: (files) =>
+      `<style>html,body{margin:0;height:100%}body{display:grid;place-items:center;background:transparent;padding:8px;box-sizing:border-box}svg{max-width:100%;max-height:100%;display:block;border-radius:8px}${files["style.css"] || ""}</style>${files["scene.svg"] || ""}`,
+  },
+  character: {
+    label: "Direct a character · state, not code",
+    desc: "Nothing here is code. One sentence advances the whole character a beat: mood.md is rewritten and the script in chat.md continues — every hunk applies deterministically. This is the pattern behind MARVIS.",
+    goal: "The lab loses power mid-conversation",
+    files: {
+      "soul.md": "MARVIS — a sardonic lab assistant. Loyal, theatrical, allergic to being thanked.\n",
+      "mood.md": "smug — the fusion demo went perfectly.\n",
+      "chat.md": "MARVIS: Behold. Cold fusion, room temperature, zero drama.\nYOU: Nice work, MARVIS.\nMARVIS: Please. Drama was never on the table.\n",
+    },
+    response: "Advancing the scene one beat: the mood shifts and the script continues.\n\n```diff\n--- a/mood.md\n+++ b/mood.md\n@@ -1 +1 @@\n-smug — the fusion demo went perfectly.\n+rattled — on backup batteries, pretending otherwise.\n--- a/chat.md\n+++ b/chat.md\n@@ -1,3 +1,6 @@\n MARVIS: Behold. Cold fusion, room temperature, zero drama.\n YOU: Nice work, MARVIS.\n MARVIS: Please. Drama was never on the table.\n+\n+*The lights die. Somewhere a centrifuge spins down.*\n+MARVIS: …I meant to do that. Backup power in three, two—\n```",
+    applied: {},
+    preview: (files) => {
+      const mood = ((files["mood.md"] || "").split("\n")[0] || "").trim();
+      const lines = (files["chat.md"] || "").trim().split("\n").filter(Boolean);
+      const rows = lines
+        .map((l) => {
+          if (/^\*/.test(l)) return `<p class="dir">${esc(l.replace(/\*/g, ""))}</p>`;
+          const m = l.match(/^([A-Z]+):\s*(.*)$/);
+          if (!m) return `<p class="dir">${esc(l)}</p>`;
+          return `<p class="${m[1] === "YOU" ? "you" : "bot"}"><b>${esc(m[1])}</b>&nbsp; ${esc(m[2])}</p>`;
+        })
+        .join("");
+      return `<style>html,body{margin:0}body{background:#0c1210;color:#e4ece9;font:13px/1.5 system-ui,sans-serif;padding:12px;box-sizing:border-box}
+        .mood{display:inline-block;background:#2dd4a71f;color:#2dd4a7;border:1px solid #2dd4a744;border-radius:1rem;padding:2px 10px;font-weight:700;font-size:11px;margin-bottom:10px}
+        p{margin:.4em 0}.dir{color:#93a39d;font-style:italic;text-align:center;font-size:12px}.you{text-align:right;color:#9ecbff}.bot{color:#e4ece9}</style>
+        <span class="mood">mood: ${esc(mood)}</span>${rows}`;
+    },
+  },
+  comic: {
+    label: "Add a comic panel · creates a new file",
+    desc: "The diff edits panel 2 and creates panels/3.json out of thin air. New files, deletions, edits across the whole map — all one unified diff, applied atomically.",
+    goal: "Raise the stakes — end the page on a cliffhanger",
+    files: {
+      "config.json": '{\n  "title": "LIFTOFF",\n  "style": "clean sci-fi ink, two-color",\n  "cast": ["NOVA", "HELIX"]\n}\n',
+      "panels/1.json": '{ "shot": "wide", "scene": "Launch gantry at dawn; NOVA checks a wrist console.", "dialogue": "NOVA: Window is open. Sixty seconds." }\n',
+      "panels/2.json": '{ "shot": "close", "scene": "HELIX\'s status ring pulses from amber to green.", "dialogue": "HELIX: All systems… agreeable." }\n',
+    },
+    response: 'Tightening panel 2 and adding a cliffhanger panel.\n\n```diff\n--- a/panels/2.json\n+++ b/panels/2.json\n@@ -1 +1 @@\n-{ "shot": "close", "scene": "HELIX\'s status ring pulses from amber to green.", "dialogue": "HELIX: All systems… agreeable." }\n+{ "shot": "close", "scene": "HELIX\'s status ring pulses green — then stutters.", "dialogue": "HELIX: All systems… agreeable. Mostly." }\n--- /dev/null\n+++ b/panels/3.json\n@@ -0,0 +1 @@\n+{ "shot": "extreme close", "scene": "A hairline crack crawls across the cockpit glass; alarms bloom red.", "dialogue": "NOVA: HELIX. Tell me you see that." }\n```',
+    applied: {},
+    previewHeight: 330,
+    preview: (files) => {
+      const panels = Object.keys(files).filter((p) => p.startsWith("panels/")).sort();
+      let title = "";
+      try { title = JSON.parse(files["config.json"] || "{}").title || ""; } catch { /* mid-edit */ }
+      const cards = panels
+        .map((p) => {
+          try {
+            const j = JSON.parse(files[p]);
+            return `<div class="p"><span class="shot">${esc(j.shot || "")}</span><p class="sc">${esc(j.scene || "")}</p><p class="dl">${esc(j.dialogue || "")}</p></div>`;
+          } catch {
+            return `<div class="p"><p class="sc">(editing…)</p></div>`;
+          }
+        })
+        .join("");
+      return `<style>html,body{margin:0}body{background:#101418;color:#e8e6df;font:11px/1.35 system-ui,sans-serif;padding:8px;box-sizing:border-box}
+        h1{font-size:12px;letter-spacing:.2em;margin:0 0 6px;color:#ffd166}
+        .p{border:2px solid #e8e6df;border-radius:4px;padding:5px 8px;margin-bottom:5px;background:#171d23}
+        .shot{font-size:9px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#8ecae6}
+        .sc{margin:2px 0;color:#b8c0c8;font-style:italic}.dl{margin:0;font-weight:700}</style>
+        <h1>${esc(title)}</h1>${cards}`;
+    },
+  },
   goodbye: {
-    label: "Say goodbye · heals a sloppy diff",
-    desc: 'The canned model reply gets one context line wrong — it wrote greet("world") but the file says greet("World"). git apply rejects that hunk; watch smartapply patch greet.py deterministically, then repair main.py with a per-file LLM pass.',
+    label: "And yes — code",
+    desc: 'The classic: the canned reply gets one context line wrong — it wrote greet("world") but the file says greet("World"). git apply rejects that hunk; watch smartapply patch greet.py deterministically, then repair main.py with a scoped per-file LLM pass.',
     goal: "Rename greet to farewell and say goodbye instead of hello",
     files: {
       "greet.py": 'def greet(name):\n    print("Hello, " + name + "!")\n',
@@ -443,25 +655,12 @@ const SCENARIOS = {
       "main.py": 'from greet import farewell\n\ndef main():\n    farewell("World")\n\nif __name__ == "__main__":\n    main()\n',
     },
   },
-  config: {
-    label: "Extract config · creates a new file",
-    desc: "A multi-file change: the diff creates config.py from scratch and rewires greet.py to import it. Both hunks apply deterministically — zero apply-side tokens.",
-    goal: "Move the greeting text into a new config.py and use it",
-    files: {
-      "greet.py": 'def greet(name):\n    print("Hello, " + name + "!")\n\ndef main():\n    greet("World")\n\nif __name__ == "__main__":\n    main()\n',
-    },
-    response: 'Creating config.py and importing it from greet.py.\n\n```diff\n--- /dev/null\n+++ b/config.py\n@@ -0,0 +1,2 @@\n+GREETING = "Hello"\n+PUNCTUATION = "!"\n--- a/greet.py\n+++ b/greet.py\n@@ -1,2 +1,4 @@\n+from config import GREETING, PUNCTUATION\n+\n def greet(name):\n-    print("Hello, " + name + "!")\n+    print(GREETING + ", " + name + PUNCTUATION)\n```',
-    applied: {
-      "config.py": 'GREETING = "Hello"\nPUNCTUATION = "!"\n',
-      "greet.py": 'from config import GREETING, PUNCTUATION\n\ndef greet(name):\n    print(GREETING + ", " + name + PUNCTUATION)\n\ndef main():\n    greet("World")\n\nif __name__ == "__main__":\n    main()\n',
-    },
-  },
 };
 /* SCENARIOS:END */
 
 /* ---------- state ---------- */
 let mode = "demo";                    // "demo" | "real"
-let scenarioKey = "goodbye";
+let scenarioKey = "night";
 let files = {};                       // current { path: content } shown in the editors
 let running = false;
 
@@ -529,7 +728,7 @@ function renderRun() {
   else $("run").title = "";
 }
 
-/* ---------- scenarios + editors ---------- */
+/* ---------- scenarios + editors + preview ---------- */
 function renderScenarios() {
   const wrap = $("scenarios");
   wrap.innerHTML = "";
@@ -549,6 +748,7 @@ function selectScenario(key) {
   $("goal").value = SCENARIOS[key].goal;
   renderScenarios();
   renderEditors();
+  renderPreview();
   clearOutputs();
 }
 
@@ -564,10 +764,20 @@ function renderEditors() {
     const ta = document.createElement("textarea");
     ta.rows = Math.min(14, Math.max(6, content.split("\n").length + 1));
     ta.value = content;
-    ta.addEventListener("input", () => { files[path] = ta.value; });
+    ta.addEventListener("input", () => { files[path] = ta.value; renderPreview(); });
     div.append(label, ta);
     wrap.appendChild(div);
   }
+}
+
+function renderPreview() {
+  const scn = SCENARIOS[scenarioKey];
+  const has = typeof scn.preview === "function";
+  $("bench").classList.toggle("nopreview", !has);
+  $("previewwrap").style.display = has ? "" : "none";
+  if (!has) return;
+  $("preview").style.height = (scn.previewHeight || 260) + "px";
+  $("preview").srcdoc = scn.preview(files);
 }
 
 function clearOutputs() {
@@ -601,7 +811,7 @@ function makeFakeCallLlm(scn) {
 }
 
 // Injected via smartapply's opts.callLlmForApply — only invoked for files the
-// deterministic patcher rejects (in the demo: the hunk with wrong context).
+// deterministic patcher rejects (in the demo: the hunks with wrong context).
 function makeFakeApply(scn) {
   return async (filePath, _original, _fileDiff, _model, opts = {}) => {
     const out = scn.applied?.[filePath];
@@ -658,12 +868,14 @@ async function run() {
   const scn = SCENARIOS[scenarioKey];
 
   // Demo mode replays a canned response, so it must run against the canned
-  // files. If the visitor edited them, reset (and say so) rather than lie.
+  // files and goal. If the visitor edited either, reset (and say so) rather
+  // than lie about what produced the output.
   if (mode === "demo") {
-    const pristine = JSON.stringify(files) === JSON.stringify(scn.files);
+    const pristine = JSON.stringify(files) === JSON.stringify(scn.files)
+      && $("goal").value.trim() === scn.goal;
     files = { ...scn.files };
     $("goal").value = scn.goal;
-    if (!pristine) { renderEditors(); $("resetnote").style.display = "block"; }
+    if (!pristine) { renderEditors(); renderPreview(); $("resetnote").style.display = "block"; }
     else $("resetnote").style.display = "none";
   } else {
     $("resetnote").style.display = "none";
@@ -730,7 +942,7 @@ async function run() {
       llmResolved.add(path);
       const card = cards.get(path);
       if (!card) return;
-      setBadge(card, "llm", "LLM-resolving…");
+      setBadge(card, "llm", "LLM-repairing…");
       const pre = card.querySelector("pre");
       pre.textContent += t;
       pre.scrollTop = pre.scrollHeight;
@@ -753,7 +965,7 @@ async function run() {
       if (!(path in inputFiles)) {
         setBadge(card, "new", "new file", "Created by the diff — applied deterministically.");
       } else if (llmResolved.has(path)) {
-        setBadge(card, "llm", "LLM-resolved", "git apply / the deterministic patcher rejected this hunk; patchling rewrote the file with a per-file LLM pass.");
+        setBadge(card, "llm", "LLM-repaired", "git apply / the deterministic patcher rejected this hunk; patchling rewrote the file with a scoped per-file LLM pass.");
       } else if (updated[path] !== inputFiles[path]) {
         setBadge(card, "det", "deterministic · 0 tokens", "The hunk applied without any LLM call, even though its line numbers drifted.");
       } else {
@@ -761,9 +973,11 @@ async function run() {
       }
     }
 
-    // Feed the results back into the editors so a second run iterates.
+    // Feed the results back into the editors so a second run iterates —
+    // and re-render the preview so the change is *seen*, not just diffed.
     files = { ...updated };
     renderEditors();
+    renderPreview();
 
     $("phase").textContent = "done";
     document.querySelector("#progress .spin").style.display = "none";
