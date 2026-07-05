@@ -16,6 +16,10 @@ function joinUrl(baseUrl, path) {
   return `${base}${path}`;
 }
 
+/**
+ * @param {string} baseUrl
+ * @returns {string}
+ */
 function domainForUrl(baseUrl) {
   try {
     return new URL(baseUrl).host || baseUrl;
@@ -171,6 +175,8 @@ export async function callLlm({
 /**
  * Resolve the effective API key, preferring an explicit override then the
  * GPTDIFF_LLM_API_KEY environment variable.
+ * @param {string} [apiKey]
+ * @returns {string | undefined}
  */
 export function resolveApiKey(apiKey) {
   return apiKey || getEnv('GPTDIFF_LLM_API_KEY');
@@ -179,6 +185,8 @@ export function resolveApiKey(apiKey) {
 /**
  * Resolve the effective base URL, preferring an explicit override then the
  * GPTDIFF_LLM_BASE_URL environment variable, then the NanoGPT default.
+ * @param {string} [baseUrl]
+ * @returns {string}
  */
 export function resolveBaseUrl(baseUrl) {
   return baseUrl || getEnv('GPTDIFF_LLM_BASE_URL', DEFAULT_BASE_URL) || DEFAULT_BASE_URL;

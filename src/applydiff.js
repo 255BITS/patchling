@@ -17,18 +17,23 @@ import { splitLines } from './text.js';
  * @returns {Array<[string, string]>} list of [filePath, patch] tuples
  */
 export function parseDiffPerFile(diffText) {
+  /**
+   * @param {Array<[string, string]>} diffs
+   * @returns {Array<[string, string]>}
+   */
   const dedupDiffs = (diffs) => {
     const groups = new Map();
     for (const [key, value] of diffs) {
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(value);
     }
-    return Array.from(groups.entries()).map(([key, values]) => [key, values.join('\n')]);
+    return Array.from(groups.entries()).map(([key, values]) => /** @type {[string, string]} */ ([key, values.join('\n')]));
   };
 
   // Special case: handle LLM-style patch delimiters.
   if (diffText.includes('*** Begin Patch')) {
     const lines = splitLines(diffText);
+    /** @type {Array<[string, string]>} */
     const diffs = [];
     let currentLines = [];
     let currentFile = null;
@@ -59,6 +64,7 @@ export function parseDiffPerFile(diffText) {
   // Check if any header line exists.
   if (!lines.some((line) => headerRe.test(line))) {
     // Fallback strategy: detect file headers from '---' / '+++' pairs.
+    /** @type {Array<[string, string]>} */
     const diffs = [];
     let currentLines = [];
     let currentFile = null;
@@ -121,6 +127,7 @@ export function parseDiffPerFile(diffText) {
   }
 
   // Header-based strategy.
+  /** @type {Array<[string, string]>} */
   const diffs = [];
   let currentLines = [];
   let currentFile = null;
