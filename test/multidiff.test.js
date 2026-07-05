@@ -29,3 +29,21 @@ DIFF 2`;
 
   assert.equal(result.trim(), expected.trim());
 });
+
+test('generateDiff reports token usage via opts.onUsage without changing its return type', async () => {
+  const dummyCallLlm = async () => ({
+    choices: [{ message: { content: '```diff\nDIFF\n```' } }],
+    usage: { prompt_tokens: 42, completion_tokens: 7, total_tokens: 49 },
+  });
+
+  let usage = null;
+  const result = await generateDiff('dummy environment', 'dummy goal', {
+    model: 'test-model',
+    callLlm: dummyCallLlm,
+    onUsage: (u) => { usage = u; },
+  });
+
+  assert.equal(typeof result, 'string');
+  assert.equal(result.trim(), 'DIFF');
+  assert.deepEqual(usage, { promptTokens: 42, completionTokens: 7, totalTokens: 49 });
+});
