@@ -53,7 +53,7 @@
   * { box-sizing: border-box; }
   /* Grid/flex children must be allowed to shrink below their content width,
      or wide <pre> blocks force horizontal scroll on small screens. */
-  .hero > div, .out, .editor, .eco, .step, .filecard, .gcard, .bench > div, .whygrid > div { min-width: 0; }
+  .hero > div, .editor, .eco, .step, .filecard, .gcard, .whygrid > div { min-width: 0; }
   html, body { margin: 0; }
   body {
     background: var(--bg); color: var(--ink);
@@ -81,7 +81,7 @@
   .logo { width: 1.35rem; height: 1.35rem; display: inline-block; }
 
   /* ---------- hero ---------- */
-  .hero { display: grid; grid-template-columns: 1.02fr .98fr; gap: 3rem; align-items: center; margin-top: 2.5rem; }
+  .hero { display: grid; grid-template-columns: .94fr 1.06fr; gap: 2.6rem; align-items: start; margin-top: 2.5rem; }
   .hero h1 { font-size: clamp(2rem, 4.6vw, 3rem); margin: .2rem 0 .9rem; font-weight: 800; }
   .hero h1 .acc { color: var(--accent); }
   .hero .sub { color: var(--muted); font-size: 1.06rem; max-width: 54ch; }
@@ -126,74 +126,57 @@
   .window .cmt { color: var(--hdr); }
   .window .kw { color: var(--accent); }
 
-  /* ---------- playground ---------- */
-  .play-card { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; box-shadow: var(--shadow); padding: 1.2rem 1.2rem 1.4rem; }
-  .modes { display: inline-flex; border: 1px solid var(--line); border-radius: .6rem; overflow: hidden; margin-bottom: .9rem; }
-  .modes button { font: inherit; font-size: .88rem; padding: .45rem .9rem; border: none; background: var(--panel); color: var(--muted); cursor: pointer; }
-  .modes button.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
-  #demonote { font-size: .85rem; color: var(--muted); margin: 0 0 .9rem; }
-  #realauth { display: none; margin: 0 0 1rem; padding: .8rem .9rem; border: 1px dashed var(--line); border-radius: .6rem; font-size: .9rem; }
-  #realauth .row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
-  #realauth input { font: inherit; font-size: .85rem; padding: .4rem .6rem; border-radius: .45rem; border: 1px solid var(--line); background: var(--panel2); color: var(--ink); min-width: 0; }
-  #keyinput { flex: 1 1 14rem; }
-  #modelinput { flex: 1 1 16rem; }
-  .authnote { color: var(--muted); font-size: .8rem; margin-top: .45rem; }
-
-  .scenarios { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+  /* ---------- live demo (in the hero, where the code screenshot used to be) ---------- */
+  .demo .dbody { padding: .85rem .9rem 1rem; }
+  .scenarios { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .8rem; }
   .scenarios button {
-    font: inherit; font-size: .84rem; padding: .35rem .8rem; border-radius: 2rem; cursor: pointer;
+    font: inherit; font-size: .78rem; padding: .26rem .7rem; border-radius: 2rem; cursor: pointer;
     border: 1px solid var(--line); background: var(--panel2); color: var(--muted);
   }
   .scenarios button.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
-  #scdesc { font-size: .86rem; color: var(--muted); margin: 0 0 1rem; }
-  #scdesc code { font-size: .82em; }
-
-  .bench { display: grid; grid-template-columns: 1.35fr .85fr; gap: .9rem; align-items: start; }
-  .bench.nopreview { grid-template-columns: 1fr; }
-  .editors { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .9rem; }
-  .editor label { display: flex; align-items: baseline; gap: .5rem; font-size: .78rem; color: var(--muted); margin-bottom: .3rem; }
-  .editor label .path { font-weight: 700; color: var(--ink); }
-  .editor textarea {
-    width: 100%; resize: vertical; font-size: 13px; line-height: 1.55; color: var(--ink);
-    background: var(--code-bg); border: 1px solid var(--line); border-radius: .55rem; padding: .7rem .8rem;
-  }
-  .editor textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
-
-  #previewwrap { position: sticky; top: 1rem; }
-  #previewwrap .plabel { font-size: .78rem; color: var(--muted); margin-bottom: .3rem; display: block; }
-  #previewwrap .plabel b { color: var(--ink); }
   #preview {
-    width: 100%; height: 260px; border: 1px solid var(--line); border-radius: .55rem;
+    width: 100%; height: 240px; border: 1px solid var(--line); border-radius: .55rem;
     background: var(--code-bg); display: block;
   }
+  #scdesc { font-size: .8rem; color: var(--muted); margin: .5rem 0 .75rem; }
+  #scdesc code { font-size: .82em; }
 
-  .goalrow { display: flex; gap: .7rem; margin-top: 1rem; flex-wrap: wrap; }
+  .goalrow { display: flex; gap: .5rem; flex-wrap: wrap; }
   .goalrow input {
-    flex: 1 1 18rem; font: inherit; padding: .6rem .8rem; border-radius: .6rem;
+    flex: 1 1 12rem; font: inherit; font-size: .92rem; padding: .55rem .75rem; border-radius: .6rem;
     border: 1px solid var(--line); background: var(--panel2); color: var(--ink); min-width: 0;
   }
   .goalrow input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 
-  #progress { display: none; margin-top: 1rem; padding: .6rem .9rem; border: 1px solid var(--line); border-radius: .6rem; background: var(--panel2); font-size: .86rem; }
-  #progress .mono { font-size: .8rem; color: var(--muted); }
+  #status { display: none; margin: .7rem 0 0; font-size: .84rem; color: var(--muted); }
+  #status b { color: var(--ink); }
   .spin { display: inline-block; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  #resetnote { display: none; margin-top: .7rem; font-size: .82rem; color: var(--muted); }
+  #resetnote { display: none; margin: .6rem 0 0; font-size: .78rem; color: var(--muted); }
 
-  .outs { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; margin-top: 1.1rem; }
-  .out h3 { font-size: .82rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 .4rem; font-weight: 700; }
-  .out pre, .filecard pre {
+  #diffwrap { display: none; margin-top: .7rem; }
+  #diffwrap .dlabel { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; display: block; margin-bottom: .3rem; }
+  #diffwrap .dlabel #diffsrc { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  #diffpane {
     margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: .55rem;
-    padding: .7rem .8rem; font-size: 12.5px; line-height: 1.55; overflow: auto;
-    max-height: 340px; min-height: 3rem; white-space: pre;
+    padding: .6rem .7rem; font-size: 12px; line-height: 1.5; overflow: auto;
+    max-height: 200px; white-space: pre;
   }
   #diffpane .add { color: var(--add); background: var(--add-bg); display: inline-block; min-width: 100%; }
   #diffpane .del { color: var(--del); background: var(--del-bg); display: inline-block; min-width: 100%; }
   #diffpane .hdr { color: var(--hdr); }
-  .filecard { margin-bottom: .9rem; }
-  .filecard:last-child { margin-bottom: 0; }
-  .filecard .fhead { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .35rem; }
-  .filecard .fpath { font-size: .82rem; font-weight: 700; }
+
+  #results { margin-top: .55rem; }
+  #results .msg { font-size: .82rem; color: var(--muted); margin: .4rem 0 0; }
+  .filecard { margin-top: .45rem; }
+  .filecard .fhead { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .filecard .fpath { font-size: .8rem; font-weight: 700; }
+  .filecard pre {
+    display: none; margin: .35rem 0 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: .55rem;
+    padding: .55rem .7rem; font-size: 11.5px; line-height: 1.5; overflow: auto;
+    max-height: 110px; white-space: pre;
+  }
+  .filecard.showpre pre { display: block; }
   .badge { font-size: .68rem; font-weight: 700; padding: .1rem .5rem; border-radius: 1rem; letter-spacing: .02em; }
   .badge.det { background: var(--add-bg); color: var(--add); }
   .badge.llm { background: var(--accent-soft); color: var(--accent); }
@@ -201,7 +184,27 @@
   .badge.gone { background: var(--del-bg); color: var(--del); }
   .badge.wait { background: var(--code-bg); color: var(--muted); }
   .badge.prod { background: var(--add-bg); color: var(--add); }
-  .upsell { margin-top: 1rem; font-size: .88rem; padding: .7rem .9rem; border-radius: .6rem; background: var(--accent-soft); display: none; }
+  .upsell { margin-top: .8rem; font-size: .82rem; padding: .6rem .75rem; border-radius: .6rem; background: var(--accent-soft); display: none; }
+
+  /* tucked-away controls: the point first, the knobs on request */
+  .advanced { margin-top: .9rem; border-top: 1px solid var(--line); padding-top: .55rem; }
+  .advanced details { font-size: .84rem; }
+  .advanced summary { cursor: pointer; color: var(--muted); padding: .22rem 0; }
+  .advanced summary:hover { color: var(--accent); }
+  .editors { display: grid; grid-template-columns: 1fr; gap: .7rem; margin: .6rem 0 .4rem; }
+  .editor label { display: block; font-size: .75rem; color: var(--muted); margin-bottom: .25rem; }
+  .editor label .path { font-weight: 700; color: var(--ink); }
+  .editor textarea {
+    width: 100%; resize: vertical; font-size: 12px; line-height: 1.5; color: var(--ink);
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: .55rem; padding: .6rem .7rem;
+  }
+  .editor textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  #realauth { margin: .6rem 0 .4rem; font-size: .86rem; }
+  #realauth .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  #realauth input { font: inherit; font-size: .82rem; padding: .38rem .55rem; border-radius: .45rem; border: 1px solid var(--line); background: var(--panel2); color: var(--ink); min-width: 0; }
+  #keyinput { flex: 1 1 10rem; }
+  #modelinput { flex: 1 1 12rem; }
+  .authnote { color: var(--muted); font-size: .75rem; margin-top: .4rem; }
 
   /* ---------- built with it ---------- */
   .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .9rem; margin-top: 1.5rem; }
@@ -251,12 +254,9 @@
     .hero { grid-template-columns: 1fr; gap: 2rem; }
     .steps { grid-template-columns: 1fr; }
     .whygrid { grid-template-columns: 1fr; gap: 1.4rem; }
-    .bench { grid-template-columns: 1fr; }
-    /* On phones the visual payoff comes first, raw file panes after. */
-    #previewwrap { position: static; order: -1; }
   }
   @media (max-width: 760px) {
-    .editors, .outs, .ecosys { grid-template-columns: 1fr; }
+    .ecosys { grid-template-columns: 1fr; }
     section { margin: 3rem auto; }
   }
 </style>
@@ -270,7 +270,7 @@
     patchling
   </a>
   <span class="spacer"></span>
-  <a class="nl" href="#playground">Playground</a>
+  <a class="nl" href="#playground">Demo</a>
   <a class="nl" href="#built">Built with it</a>
   <a class="nl" href="#how">How it works</a>
   <a class="nl" href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">GitHub</a>
@@ -286,92 +286,58 @@
       <span class="pill"><span class="lang">py</span><code>pip install patchling</code><button data-copy="pip install patchling">copy</button></span>
     </div>
     <div class="ctas">
-      <a class="btn primary" href="#playground">▶ Watch a sentence change a scene — no key needed</a>
+      <button class="btn primary" id="hero-run">▶ Run the demo — no key needed</button>
       <a class="btn" href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">GitHub</a>
     </div>
     <p class="heronote">Zero-dependency ESM · runs in the browser and Node 18+ · Python too.</p>
   </div>
-  <div class="window" aria-hidden="true">
-    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">your-app.js</span></div>
-    <pre><span class="cmt">// your app's state — any files, not just code</span>
-<span class="kw">const</span> files = { <span class="hdr">"scene.svg"</span>: …, <span class="hdr">"style.css"</span>: … };
-<span class="kw">const</span> goal  = <span class="hdr">"make it a night launch — stars, glowing engine"</span>;
 
-<span class="kw">const</span> diff = <span class="kw">await</span> generateDiff(buildEnvironment(files), goal);
-<span class="kw">const</span> next = <span class="kw">await</span> smartapply(diff, files);
-<span class="cmt">// a new map — atomic, your originals untouched</span>
-
-<span class="ok">   scene.svg  ✓ deterministic · 0 tokens</span>
-<span class="ok">   style.css  ✓ LLM-repaired</span> <span class="cmt">— git apply would have rejected it</span></pre>
-  </div>
-</section>
-
-<section id="playground">
-  <p class="kicker">Live playground</p>
-  <h2>Type a change. Watch it land.</h2>
-  <p class="lead">This page imports <code class="inline">patchling</code> straight from <a href="https://esm.sh/patchling" target="_blank" rel="noopener">esm.sh</a> and runs the real <code class="inline">generateDiff → smartapply</code> pipeline in your browser. Demo mode replays a pre-recorded model response — free, instant, no key — through the real diff parser and apply engine. Switch to <b>Real</b> to transform anything with your own words.</p>
-
-  <div class="play-card">
-    <div class="modes" role="tablist">
-      <button id="mode-demo" class="on">Demo — no key needed</button>
-      <button id="mode-real">Real — your NanoGPT key</button>
-    </div>
-
-    <p id="demonote">▶ <b>Pre-recorded reply, real engine.</b> The model response below is canned and streamed locally — but the diff parser and <code class="inline">smartapply</code> engine you're watching are the actual library running in this page.</p>
-
-    <div id="realauth">
-      <div class="row" id="signedout">
-        <button class="btn primary" id="signin">Sign in with NanoGPT</button>
-        <span style="color:var(--muted)">or</span>
-        <input id="keyinput" placeholder="paste an API key: sk-nano-…" />
-        <button class="btn" id="keysave">Save</button>
+  <div class="window demo" id="playground">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">live demo — the real library, running in this page</span></div>
+    <div class="dbody">
+      <div class="scenarios" id="scenarios"></div>
+      <iframe id="preview" sandbox="" title="live preview of the file map"></iframe>
+      <p id="scdesc"></p>
+      <div class="goalrow">
+        <input id="goal" aria-label="What should change? Plain English." />
+        <button class="btn primary" id="run">▶ Run</button>
       </div>
-      <div class="row" id="signedin" style="display:none">
-        <span>Signed in ✓</span>
-        <button class="btn" id="signout">Sign out</button>
+      <p id="status"><span class="spin">◐</span> <b id="phase">working…</b></p>
+      <p id="resetnote">Demo mode replays a pre-recorded reply, so the files and goal were reset to match. Use your own key below to transform your own edits.</p>
+      <div id="diffwrap">
+        <span class="dlabel">the diff the model wrote <span id="diffsrc"></span></span>
+        <pre id="diffpane"></pre>
       </div>
-      <div class="row" style="margin-top:.6rem">
-        <label for="modelinput" style="font-size:.8rem;color:var(--muted)">model</label>
-        <input id="modelinput" class="mono" />
+      <div id="results"></div>
+      <div class="upsell" id="upsell">
+        That was the real engine — streamed diff, deterministic patch, scoped LLM repair. <code class="inline">npm install patchling</code> puts it in your app, or <a href="#" id="upsell-real">run it live with your own words</a>.
       </div>
-      <p class="authnote">Keys come from <a href="https://nano-gpt.com" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API. Your key stays in this browser (localStorage) and is sent only to nano-gpt.com. OAuth sign-in requires the page to be served over http(s).</p>
-    </div>
-
-    <div class="scenarios" id="scenarios"></div>
-    <p id="scdesc"></p>
-
-    <div class="bench" id="bench">
-      <div class="editors" id="editors"></div>
-      <div id="previewwrap">
-        <span class="plabel"><b>live preview</b> — rendered from the files on the left</span>
-        <iframe id="preview" sandbox="" title="live preview of the file map"></iframe>
+      <div class="advanced">
+        <details id="filesdetails">
+          <summary>View &amp; edit the files behind this demo</summary>
+          <div class="editors" id="editors"></div>
+        </details>
+        <details id="realdetails">
+          <summary>Run it for real — your own NanoGPT key</summary>
+          <div id="realauth">
+            <div class="row" id="signedout">
+              <button class="btn" id="signin">Sign in with NanoGPT</button>
+              <span style="color:var(--muted)">or</span>
+              <input id="keyinput" placeholder="paste an API key: sk-nano-…" />
+              <button class="btn" id="keysave">Save</button>
+            </div>
+            <div class="row" id="signedin" style="display:none">
+              <span>Signed in ✓</span>
+              <button class="btn" id="signout">Sign out</button>
+            </div>
+            <div class="row" style="margin-top:.5rem">
+              <label for="modelinput" style="font-size:.78rem;color:var(--muted)">model</label>
+              <input id="modelinput" class="mono" />
+            </div>
+            <p class="authnote">Keys come from <a href="https://nano-gpt.com" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API. Your key stays in this browser (localStorage) and is sent only to nano-gpt.com. OAuth sign-in requires the page to be served over http(s).</p>
+          </div>
+        </details>
       </div>
-    </div>
-
-    <div class="goalrow">
-      <input id="goal" placeholder="What should change? Plain English." />
-      <button class="btn primary" id="run">▶ Diff &amp; smartapply</button>
-    </div>
-    <p id="resetnote">Demo mode replays a canned response, so the files and goal were reset to match the scenario. Switch to <b>Real</b> mode to transform your own edits.</p>
-
-    <div id="progress">
-      <span class="spin">◐</span> <b id="phase">starting…</b> · ⏱ <span id="elapsed">0.0</span>s
-      <span class="mono">· streamed <span id="chars">0</span> chars</span>
-    </div>
-
-    <div class="outs">
-      <div class="out">
-        <h3>Unified diff <span id="diffsrc" style="text-transform:none;letter-spacing:0;font-weight:400"></span></h3>
-        <pre id="diffpane">The model's response streams here.</pre>
-      </div>
-      <div class="out">
-        <h3>Files out</h3>
-        <div id="results"><pre>smartapply's returned file map lands here.</pre></div>
-      </div>
-    </div>
-
-    <div class="upsell" id="upsell">
-      Everything you just watched — streamed diff, deterministic patch, scoped LLM repair — was the real library running in your browser. <a href="#" id="upsell-real">Switch to Real mode</a> to transform your own files with your own words, or <code class="inline">npm install patchling</code> to put it in your app.
     </div>
   </div>
 </section>
@@ -558,8 +524,8 @@ const NIGHT_CSS = `.sky { fill: #8ecae6; }
 
 const SCENARIOS = {
   night: {
-    label: "Restyle a scene · heals a sloppy diff",
-    desc: "The canned model reply misremembers the current colors in style.css — models do this constantly, and git apply would reject those hunks. Watch scene.svg patch deterministically (0 tokens), style.css get one scoped LLM repair, and the scene turn to night.",
+    label: "Restyle a scene",
+    desc: "The pre-recorded model reply gets style.css slightly wrong — git apply would reject it. patchling heals it and the scene turns to night.",
     goal: "Make it a night launch — dark sky, stars, a moon, and a glowing engine flame",
     files: {
       "scene.svg": NIGHT_SCENE,
@@ -581,8 +547,8 @@ const SCENARIOS = {
       `<style>html,body{margin:0;height:100%}body{display:grid;place-items:center;background:transparent;padding:8px;box-sizing:border-box}svg{max-width:100%;max-height:100%;display:block;border-radius:8px}${files["style.css"] || ""}</style>${files["scene.svg"] || ""}`,
   },
   character: {
-    label: "Direct a character · state, not code",
-    desc: "Nothing here is code. One sentence advances the whole character a beat: mood.md is rewritten and the script in chat.md continues — every hunk applies deterministically. This is the pattern behind MARVIS.",
+    label: "Direct a character",
+    desc: "Nothing here is code — one sentence rewrites the character's mood and continues the script.",
     goal: "The lab loses power mid-conversation",
     files: {
       "soul.md": "MARVIS — a sardonic lab assistant. Loyal, theatrical, allergic to being thanked.\n",
@@ -609,8 +575,8 @@ const SCENARIOS = {
     },
   },
   comic: {
-    label: "Add a comic panel · creates a new file",
-    desc: "The diff edits panel 2 and creates panels/3.json out of thin air. New files, deletions, edits across the whole map — all one unified diff, applied atomically.",
+    label: "Add a comic panel",
+    desc: "One diff edits panel 2 and creates panels/3.json out of thin air — new files, applied atomically.",
     goal: "Raise the stakes — end the page on a cliffhanger",
     files: {
       "config.json": '{\n  "title": "LIFTOFF",\n  "style": "clean sci-fi ink, two-color",\n  "cast": ["NOVA", "HELIX"]\n}\n',
@@ -644,7 +610,7 @@ const SCENARIOS = {
   },
   goodbye: {
     label: "And yes — code",
-    desc: 'The classic: the canned reply gets one context line wrong — it wrote greet("world") but the file says greet("World"). git apply rejects that hunk; watch smartapply patch greet.py deterministically, then repair main.py with a scoped per-file LLM pass.',
+    desc: "A rename across two files. One hunk has bad context — git apply rejects it; smartapply repairs just that file.",
     goal: "Rename greet to farewell and say goodbye instead of hello",
     files: {
       "greet.py": 'def greet(name):\n    print("Hello, " + name + "!")\n',
@@ -704,26 +670,27 @@ function renderAuth() {
 }
 
 /* ---------- mode toggle ---------- */
+// No tab UI anymore: opening the "run it for real" disclosure IS switching to
+// real mode; closing it drops back to the canned demo.
 function setMode(m) {
   mode = m;
-  $("mode-demo").classList.toggle("on", m === "demo");
-  $("mode-real").classList.toggle("on", m === "real");
-  $("demonote").style.display = m === "demo" ? "" : "none";
-  $("realauth").style.display = m === "real" ? "block" : "none";
   renderRun();
 }
-$("mode-demo").addEventListener("click", () => setMode("demo"));
-$("mode-real").addEventListener("click", () => setMode("real"));
+$("realdetails").addEventListener("toggle", () => setMode($("realdetails").open ? "real" : "demo"));
 $("upsell-real").addEventListener("click", (e) => {
   e.preventDefault();
-  setMode("real");
-  $("playground").scrollIntoView({ behavior: "smooth" });
+  $("realdetails").open = true; // toggle event flips the mode
+  $("goal").focus();
+});
+$("hero-run").addEventListener("click", () => {
+  $("playground").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (!$("run").disabled) run();
 });
 
 function renderRun() {
   const ok = !running && (mode === "demo" || !!getKey());
   $("run").disabled = !ok;
-  $("run").textContent = mode === "demo" ? "▶ Run the demo" : "▶ Diff & smartapply";
+  $("run").textContent = mode === "demo" ? "▶ Run" : "▶ Run live";
   if (mode === "real" && !getKey()) $("run").title = "Sign in or paste a key first";
   else $("run").title = "";
 }
@@ -762,7 +729,7 @@ function renderEditors() {
     const p = document.createElement("span"); p.className = "path mono"; p.textContent = path;
     label.append(p);
     const ta = document.createElement("textarea");
-    ta.rows = Math.min(14, Math.max(6, content.split("\n").length + 1));
+    ta.rows = Math.min(10, Math.max(4, content.split("\n").length + 1));
     ta.value = content;
     ta.addEventListener("input", () => { files[path] = ta.value; renderPreview(); });
     div.append(label, ta);
@@ -773,17 +740,19 @@ function renderEditors() {
 function renderPreview() {
   const scn = SCENARIOS[scenarioKey];
   const has = typeof scn.preview === "function";
-  $("bench").classList.toggle("nopreview", !has);
-  $("previewwrap").style.display = has ? "" : "none";
-  if (!has) return;
-  $("preview").style.height = (scn.previewHeight || 260) + "px";
+  $("preview").style.display = has ? "" : "none";
+  // No visual payoff for this scenario, so the files ARE the payoff — open them.
+  if (!has) { $("filesdetails").open = true; return; }
+  $("preview").style.height = (scn.previewHeight || 240) + "px";
   $("preview").srcdoc = scn.preview(files);
 }
 
 function clearOutputs() {
-  $("diffpane").textContent = "The model's response streams here.";
-  $("results").innerHTML = "<pre>smartapply's returned file map lands here.</pre>";
+  $("diffwrap").style.display = "none";
+  $("diffpane").textContent = "";
   $("diffsrc").textContent = "";
+  $("results").innerHTML = "";
+  $("status").style.display = "none";
   $("upsell").style.display = "none";
   $("resetnote").style.display = "none";
 }
@@ -851,8 +820,15 @@ function fileCard(path) {
   head.append(p, b);
   const pre = document.createElement("pre");
   pre.textContent = "";
-  card.append(head, pre);
+  card.append(head, pre); // pre stays hidden unless the card gets .showpre
   return card;
+}
+
+function resultMsg(text) {
+  const p = document.createElement("p");
+  p.className = "msg";
+  p.textContent = text;
+  $("results").replaceChildren(p);
 }
 
 function setBadge(card, cls, text, title) {
@@ -888,21 +864,16 @@ async function run() {
   running = true;
   renderRun();
   $("upsell").style.display = "none";
-  $("diffsrc").textContent = mode === "demo" ? "· canned replay" : "· live from NanoGPT";
+  $("diffsrc").textContent = mode === "demo" ? "· pre-recorded reply, real engine" : "· live from NanoGPT";
   $("diffpane").textContent = "";
+  $("diffwrap").style.display = "block";
   $("results").innerHTML = "";
-  $("progress").style.display = "block";
-  document.querySelector("#progress .spin").style.display = "";
+  $("status").style.display = "block";
+  document.querySelector("#status .spin").style.display = "";
   $("phase").textContent = "generating diff…";
-  let streamed = 0;
-  const addChars = (t) => { streamed += t.length; $("chars").textContent = streamed.toLocaleString(); };
-  $("chars").textContent = "0";
-  const t0 = performance.now();
-  const timer = setInterval(() => { $("elapsed").textContent = ((performance.now() - t0) / 1000).toFixed(1); }, 100);
 
   const diffPane = $("diffpane");
   const onDiffToken = (t) => {
-    addChars(t);
     diffPane.textContent += t;
     diffPane.scrollTop = diffPane.scrollHeight;
   };
@@ -919,8 +890,9 @@ async function run() {
 
     const perFile = parseDiffPerFile(diff);
     if (!diff.trim() || !perFile.length) {
-      $("results").innerHTML = "<pre>⚠ The model returned no applicable diff. Try rephrasing the goal.</pre>";
+      resultMsg("⚠ The model returned no applicable diff. Try rephrasing the goal.");
       $("phase").textContent = "no diff";
+      document.querySelector("#status .spin").style.display = "none";
       return;
     }
 
@@ -938,10 +910,10 @@ async function run() {
     // means the deterministic patcher handled them.
     const llmResolved = new Set();
     const onApplyToken = (t, path) => {
-      addChars(t);
       llmResolved.add(path);
       const card = cards.get(path);
       if (!card) return;
+      card.classList.add("showpre"); // the repair is worth watching — open the pane
       setBadge(card, "llm", "LLM-repairing…");
       const pre = card.querySelector("pre");
       pre.textContent += t;
@@ -958,11 +930,11 @@ async function run() {
       const pre = card.querySelector("pre");
       if (!(path in updated)) {
         setBadge(card, "gone", "deleted");
-        pre.textContent = "(file deleted)";
         continue;
       }
       pre.textContent = updated[path];
       if (!(path in inputFiles)) {
+        card.classList.add("showpre"); // a file born from thin air deserves to be seen
         setBadge(card, "new", "new file", "Created by the diff — applied deterministically.");
       } else if (llmResolved.has(path)) {
         setBadge(card, "llm", "LLM-repaired", "git apply / the deterministic patcher rejected this hunk; patchling rewrote the file with a scoped per-file LLM pass.");
@@ -979,18 +951,14 @@ async function run() {
     renderEditors();
     renderPreview();
 
-    $("phase").textContent = "done";
-    document.querySelector("#progress .spin").style.display = "none";
+    $("phase").textContent = "done ✓ — the preview and files above are the new map";
+    document.querySelector("#status .spin").style.display = "none";
     if (mode === "demo") $("upsell").style.display = "block";
   } catch (e) {
     $("phase").textContent = "error";
-    document.querySelector("#progress .spin").style.display = "none";
-    $("results").innerHTML = "";
-    const pre = document.createElement("pre");
-    pre.textContent = "Error: " + e.message;
-    $("results").appendChild(pre);
+    document.querySelector("#status .spin").style.display = "none";
+    resultMsg("Error: " + e.message);
   } finally {
-    clearInterval(timer);
     running = false;
     renderRun();
   }
@@ -1021,7 +989,7 @@ for (const btn of document.querySelectorAll("[data-copy]")) {
     // Finish an OAuth redirect if one is in flight (also sets the library's
     // GPTDIFF_LLM_API_KEY override).
     const token = await completeSignIn();
-    if (token) { setKey(token); setMode("real"); }
+    if (token) { setKey(token); $("realdetails").open = true; } // toggle handler flips to real mode
   } catch (e) {
     console.warn("OAuth completion failed:", e);
   }
