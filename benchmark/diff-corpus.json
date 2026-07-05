@@ -863,7 +863,7 @@
       "diff": "--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -1,3 +1,3 @@\n export function login(username: string, password: string): boolean {\n-  return username === 'admin' && password === 'secret';\n+  return username === 'root' && password === 'toor';\n }\n--- a/src/session.ts\n+++ b/src/session.ts\n@@ -1,4 +1,5 @@\n let current: string | null = null;\n \n export function setSession(user: string) {\n+  console.log('session set', user);\n   current = user;\n }\n",
       "expected": {
         "src/auth.ts": "export function login(user: string, pass: string): boolean {\n  return user === 'root' && pass === 'toor';\n}\n",
-        "src/session.ts": "let current: string | null = null;\n\nexport function setSession(user: string) {\n  console.log('session set', user);\n  current = user;\n}\n"
+        "src/session.ts": "let current: string | null = null;\n\nexport function setSession(user: string) {\n  console.log('session set', user);\n  current = user;\n}\n\nexport function getSession() {\n  return current;\n}\n"
       },
       "deletedPaths": [],
       "expectFallback": true
