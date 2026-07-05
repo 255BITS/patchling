@@ -1,22 +1,24 @@
-# gptdiff-js
+# patchling
 
 <p align="center">
-  <img src="infographic.svg" alt="gptdiff-js: Smart Diffs, Applied Intelligently — generateDiff creates a unified diff from your files and goal, smartapply resolves conflicts per-file with LLM, and you iterate until done" width="100%">
+  <img src="infographic.svg" alt="patchling: Smart Diffs, Applied Intelligently — generateDiff creates a unified diff from your files and goal, smartapply resolves conflicts per-file with LLM, and you iterate until done" width="100%">
 </p>
 
-A browser-first JavaScript port of [gptdiff](https://github.com/255BITS/gptdiff), scoped to the two core APIs — **`generateDiff`** and **`smartapply`** — wired to [NanoGPT](https://nano-gpt.com) for LLM completions (including "Sign in with NanoGPT" OAuth PKCE).
+> _Formerly **gptdiff-js**._
 
-Everything runs in the browser (and in Node 18+): no filesystem, no build step, zero runtime dependencies. The diff engine is a faithful port of the Python implementation; it operates on an in-memory `{ path: content }` file map instead of a directory on disk.
+**Natural-language code transformation, browser-first.** Hand patchling an in-memory `{ path: content }` file map plus a plain-English goal; **`generateDiff`** returns a unified git diff, and **`smartapply`** melds that diff into your source — even when `git apply` would reject it (drifted lines, fuzzy hunks, renames, new files, deletions). It's a bounded primitive you embed in your own app, not an open-ended coding agent. Wired to [NanoGPT](https://nano-gpt.com) for completions (including "Sign in with NanoGPT" OAuth PKCE).
 
-See it in action: **[live browser demos →](https://255bits.github.io/gptdiff-js-examples/)** (source in [gptdiff-js-examples](https://github.com/255BITS/gptdiff-js-examples)).
+Everything runs in the browser (and in Node 18+): no filesystem, no build step, zero runtime dependencies. The diff engine is a faithful port of the Python [gptdiff](https://github.com/255BITS/gptdiff); it operates on an in-memory file map instead of a directory on disk.
 
-> **The gptdiff family** —
-> [**gptdiff**](https://github.com/255BITS/gptdiff) (CLI + Python API) ·
-> **gptdiff-js** (you are here) ·
-> [**gptdiff-js-examples**](https://github.com/255BITS/gptdiff-js-examples) (live browser demos)
+See it in action: **[live browser demos →](https://255bits.github.io/gptdiff-js-examples/)**.
+
+> **The family** —
+> [**gptdiff**](https://github.com/255BITS/gptdiff) (Python library + CLI) ·
+> **patchling** (this package — the browser/Node runtime) ·
+> [**nanoodle.com**](https://nanoodle.com) (visual AI workflow editor built on it)
 
 ```js
-import { generateDiff, smartapply, buildEnvironment } from 'gptdiff-js';
+import { generateDiff, smartapply, buildEnvironment } from 'patchling';
 
 const files = { 'greet.py': 'def greet():\n    print("hello")\n' };
 
@@ -31,17 +33,17 @@ console.log(updated['greet.py']);
 ## Install / run
 
 ```bash
-npm install gptdiff-js
+npm install patchling
 ```
 
 ```js
-import { generateDiff, smartapply } from 'gptdiff-js';
+import { generateDiff, smartapply } from 'patchling';
 ```
 
 **Browser, no build step** — it's zero-dependency ESM, so a CDN import works directly (once the package is published to npm):
 
 ```js
-import { generateDiff, smartapply } from 'https://esm.sh/gptdiff-js';
+import { generateDiff, smartapply } from 'https://esm.sh/patchling';
 ```
 
 **Run from source** — point an import at `src/index.js`, or open `index.html` from a static server:
@@ -63,7 +65,7 @@ Configuration comes from environment variables (Node) or `setEnv(...)` overrides
 | `GPTDIFF_MODEL` | Model id | `xiaomi/mimo-v2.5-pro-ultraspeed` |
 
 ```js
-import { setEnv } from 'gptdiff-js';
+import { setEnv } from 'patchling';
 setEnv('GPTDIFF_LLM_API_KEY', 'sk-nano-…'); // browser, no process.env
 ```
 
@@ -72,7 +74,7 @@ setEnv('GPTDIFF_LLM_API_KEY', 'sk-nano-…'); // browser, no process.env
 `src/oauth.js` implements the [NanoGPT OAuth PKCE flow](https://nano-gpt.com/blog/sign-in-with-nanogpt-oauth-pkce) using Web Crypto. In a browser:
 
 ```js
-import { registerClient, beginSignIn, completeSignIn } from 'gptdiff-js/oauth';
+import { registerClient, beginSignIn, completeSignIn } from 'patchling/oauth';
 
 // On page load — finishes the redirect and stores the access token as
 // the GPTDIFF_LLM_API_KEY override automatically:

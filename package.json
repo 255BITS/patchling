@@ -1,7 +1,7 @@
 {
-  "name": "gptdiff",
+  "name": "patchling",
   "version": "0.2.0",
-  "description": "Generate and apply git diffs using LLMs — a browser-first JavaScript port of gptdiff (generateDiff + smartapply), wired to NanoGPT.",
+  "description": "Natural-language code transformation as a browser-first JS primitive: generateDiff turns a plain-English goal into a git diff, and smartapply melds it into your source even when git apply would reject it. Wired to NanoGPT. Formerly gptdiff-js.",
   "type": "module",
   "main": "src/index.js",
   "types": "./src/index.d.ts",
@@ -39,13 +39,16 @@
     "types": "rm -f src/*.d.ts && tsc -p tsconfig.json"
   },
   "keywords": [
-    "gptdiff",
+    "patchling",
+    "smartapply",
     "diff",
+    "patch",
     "llm",
+    "code-transformation",
     "nanogpt",
     "git",
-    "smartapply",
-    "browser"
+    "browser",
+    "gptdiff"
   ],
   "author": "255labs",
   "license": "MIT",
