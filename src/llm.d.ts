@@ -9,12 +9,17 @@
  * @param {number} [opts.maxTokens]
  * @param {number} [opts.temperature]
  * @param {number} [opts.budgetTokens] Anthropic extended-thinking budget
+ * @param {(text: string) => void} [opts.onToken] when provided, the request is
+ *   made with `stream: true` and this is called once per content delta as
+ *   tokens arrive. The resolved value keeps the exact non-streaming shape
+ *   (`{ choices: [{ message: { content } }], usage }`), so callers work
+ *   unchanged. Ignored on the Anthropic branch (which stays non-streaming).
  * @param {typeof fetch} [opts.fetchImpl] override for testing
  * @param {number} [opts.maxRetries] retries on transient 429/5xx (default 3)
  * @param {number} [opts.retryBaseMs] base backoff in ms (default 1500, exponential, capped 30s)
  * @returns {Promise<{choices: Array<{message: {content: string}}>, usage: object}>}
  */
-export function callLlm({ apiKey, baseUrl, model, messages, maxTokens, temperature, budgetTokens, fetchImpl, maxRetries, retryBaseMs, }: {
+export function callLlm({ apiKey, baseUrl, model, messages, maxTokens, temperature, budgetTokens, onToken, fetchImpl, maxRetries, retryBaseMs, }: {
     apiKey?: string;
     baseUrl?: string;
     model: string;
@@ -22,6 +27,7 @@ export function callLlm({ apiKey, baseUrl, model, messages, maxTokens, temperatu
     maxTokens?: number;
     temperature?: number;
     budgetTokens?: number;
+    onToken?: (text: string) => void;
     fetchImpl?: typeof fetch;
     maxRetries?: number;
     retryBaseMs?: number;

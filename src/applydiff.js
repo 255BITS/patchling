@@ -210,6 +210,7 @@ export function applyPatchToFile(originalContent, patch) {
           declaredNewCount = m[4] !== undefined ? parseInt(m[4], 10) : 1;
         }
       }
+      /** @type {Array<{kind: string, text: string, noNewline?: boolean}>} */
       const ops = [];
       i += 1;
       while (i < patchLines.length && !patchLines[i].replace(/^\s+/, '').startsWith('@@')) {

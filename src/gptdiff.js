@@ -83,6 +83,7 @@ function usageFrom(response) {
  * @param {string} [opts.baseUrl]
  * @param {number} [opts.budgetTokens]
  * @param {Array} [opts.images]
+ * @param {(text: string) => void} [opts.onToken] stream callback, called per content delta
  * @param {Function} [opts.callLlm]
  * @returns {Promise<{ fullResponse: string, diff: string, promptTokens: number,
  *   completionTokens: number, totalTokens: number }>}
@@ -166,10 +167,10 @@ export async function callLlmForDiff(systemPrompt, userPrompt, filesContent, mod
  *   include prose around the ```diff block); the resolved value is still the
  *   extracted diff.
  * @param {Function} [opts.callLlm]  injectable LLM client (for testing)
- * @param {Function} [opts.onUsage]  optional callback invoked with
- *   { promptTokens, completionTokens, totalTokens } after the LLM call
- *   completes, so callers can surface cost/usage without changing the
- *   return type of this function.
+ * @param {(usage: { promptTokens: number, completionTokens: number,
+ *   totalTokens: number }) => void} [opts.onUsage]  optional callback invoked
+ *   with token usage after the LLM call completes, so callers can surface
+ *   cost/usage without changing the return type of this function.
  * @returns {Promise<string>} the unified diff text
  */
 export async function generateDiff(environment, goal, opts = {}) {
@@ -212,10 +213,15 @@ export async function generateDiff(environment, goal, opts = {}) {
  * @param {string} fileDiff
  * @param {string} model
  * @param {object} [opts]
+ * @param {string} [opts.apiKey]
+ * @param {string} [opts.baseUrl]
+ * @param {string} [opts.extraPrompt] appended to the user prompt
+ * @param {number} [opts.maxTokens]
  * @param {(text: string) => void} [opts.onToken] stream callback, called once
  *   per token of the rewritten file as it arrives. Note the streamed text is
  *   the raw model output — `<think>` blocks are only stripped from the final
  *   result by {@link callLlmForApplyWithThink}.
+ * @param {Function} [opts.callLlm] injectable LLM client (for testing)
  * @returns {Promise<string>}
  */
 export async function callLlmForApply(filePath, originalContent, fileDiff, model, opts = {}) {
