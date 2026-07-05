@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>patchling — apply the AI diffs git apply rejects</title>
+<meta name="description" content="patchling is a bounded primitive for natural-language code transformation. Files in, files out: generateDiff turns a plain-English goal into a unified git diff, and smartapply melds it into your source — even when git apply would reject it." />
+<meta property="og:title" content="patchling — apply the AI diffs git apply rejects" />
+<meta property="og:description" content="Files in, files out. generateDiff turns a plain-English goal into a git diff; smartapply applies it even when git apply would reject it. A library you embed, not an agent. Try it live — no key needed." />
+<meta property="og:url" content="https://patchling.app/" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A9%B9%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f8f7;
+    --panel: #ffffff;
+    --panel2: #f0f2f1;
+    --ink: #1a2321;
+    --muted: #5b6a66;
+    --line: #d9e0dd;
+    --accent: #0d9373;
+    --accent-soft: #0d937318;
+    --accent-ink: #ffffff;
+    --add: #1a7f37;
+    --add-bg: #1a7f3714;
+    --del: #cf222e;
+    --del-bg: #cf222e12;
+    --hdr: #7a8580;
+    --code-bg: #eef1f0;
+    --shadow: 0 1px 2px #0000000a, 0 8px 28px -12px #00000026;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c1210;
+      --panel: #131b18;
+      --panel2: #0f1614;
+      --ink: #e4ece9;
+      --muted: #93a39d;
+      --line: #26332e;
+      --accent: #2dd4a7;
+      --accent-soft: #2dd4a71f;
+      --accent-ink: #04211a;
+      --add: #3fb950;
+      --add-bg: #2ea04326;
+      --del: #f85149;
+      --del-bg: #f8514922;
+      --hdr: #768680;
+      --code-bg: #0a100e;
+      --shadow: 0 1px 2px #00000055, 0 10px 32px -12px #000000aa;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  /* Grid/flex children must be allowed to shrink below their content width,
+     or wide <pre> blocks force horizontal scroll on small screens. */
+  .hero > div, .out, .editor, .eco, .step, .filecard { min-width: 0; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow-x: clip;
+  }
+  code, pre, kbd, textarea, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .container { max-width: 1080px; margin: 0 auto; padding: 0 1.25rem; }
+  section { margin: 4.5rem auto; }
+  h1, h2, h3 { line-height: 1.2; letter-spacing: -0.015em; }
+  h2 { font-size: 1.7rem; margin: 0 0 .4rem; }
+  .kicker { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; color: var(--accent); margin: 0 0 .6rem; }
+  .lead { color: var(--muted); max-width: 60ch; margin: 0 0 1.4rem; }
+  code.inline { background: var(--code-bg); border: 1px solid var(--line); border-radius: .35rem; padding: .08rem .35rem; font-size: .88em; }
+
+  /* ---------- nav ---------- */
+  nav { display: flex; align-items: center; gap: 1.1rem; padding: 1rem 0; flex-wrap: wrap; }
+  nav .brand { font-weight: 800; font-size: 1.1rem; color: var(--ink); display: inline-flex; align-items: center; gap: .45rem; }
+  nav .brand:hover { text-decoration: none; }
+  nav .spacer { flex: 1; }
+  nav a.nl { color: var(--muted); font-size: .92rem; }
+  nav a.nl:hover { color: var(--ink); text-decoration: none; }
+  .logo { width: 1.35rem; height: 1.35rem; display: inline-block; }
+
+  /* ---------- hero ---------- */
+  .hero { display: grid; grid-template-columns: 1.05fr .95fr; gap: 3rem; align-items: center; margin-top: 2.5rem; }
+  .hero h1 { font-size: clamp(2rem, 4.6vw, 3.1rem); margin: .2rem 0 .9rem; font-weight: 800; }
+  .hero h1 .rej { color: var(--del); text-decoration: line-through; text-decoration-thickness: 3px; text-decoration-color: var(--del); }
+  .hero h1 .acc { color: var(--accent); }
+  .hero .sub { color: var(--muted); font-size: 1.06rem; max-width: 54ch; }
+  .hero .sub b { color: var(--ink); }
+  .formerly { font-size: .85rem; color: var(--muted); margin-top: 1rem; }
+
+  .installs { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1.4rem 0 1.1rem; }
+  .pill {
+    display: inline-flex; align-items: center; gap: .6rem;
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: .55rem;
+    padding: .45rem .7rem; font-size: .88rem;
+  }
+  .pill .lang { font-size: .7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .pill button {
+    font: inherit; font-size: .75rem; border: 1px solid var(--line); background: var(--panel);
+    color: var(--muted); border-radius: .4rem; padding: .1rem .5rem; cursor: pointer;
+  }
+  .pill button:hover { color: var(--ink); border-color: var(--accent); }
+
+  .ctas { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: .4rem; }
+  .btn {
+    display: inline-flex; align-items: center; gap: .5rem; font: inherit; font-weight: 600; font-size: .95rem;
+    border-radius: .6rem; padding: .6rem 1.1rem; cursor: pointer; border: 1px solid var(--line);
+    background: var(--panel); color: var(--ink); text-decoration: none;
+  }
+  .btn:hover { text-decoration: none; border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn.primary:hover { filter: brightness(1.06); }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  /* window card used in hero + code samples */
+  .window { background: var(--panel); border: 1px solid var(--line); border-radius: .8rem; box-shadow: var(--shadow); overflow: hidden; }
+  .window .bar { display: flex; align-items: center; gap: .4rem; padding: .55rem .8rem; border-bottom: 1px solid var(--line); background: var(--panel2); }
+  .window .bar .dot { width: .6rem; height: .6rem; border-radius: 50%; background: var(--line); }
+  .window .bar .t { margin-left: .4rem; font-size: .74rem; color: var(--muted); }
+  .window pre { margin: 0; padding: .9rem 1rem; font-size: 12.5px; line-height: 1.55; overflow-x: auto; }
+  .window .add { color: var(--add); background: var(--add-bg); display: inline-block; width: 100%; }
+  .window .del { color: var(--del); background: var(--del-bg); display: inline-block; width: 100%; }
+  .window .hdr { color: var(--hdr); }
+  .window .ok { color: var(--add); font-weight: 700; }
+  .window .bad { color: var(--del); font-weight: 700; }
+  .window .cmt { color: var(--hdr); }
+
+  /* ---------- playground ---------- */
+  .play-card { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; box-shadow: var(--shadow); padding: 1.2rem 1.2rem 1.4rem; }
+  .modes { display: inline-flex; border: 1px solid var(--line); border-radius: .6rem; overflow: hidden; margin-bottom: .9rem; }
+  .modes button { font: inherit; font-size: .88rem; padding: .45rem .9rem; border: none; background: var(--panel); color: var(--muted); cursor: pointer; }
+  .modes button.on { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+  #demonote { font-size: .85rem; color: var(--muted); margin: 0 0 .9rem; }
+  #realauth { display: none; margin: 0 0 1rem; padding: .8rem .9rem; border: 1px dashed var(--line); border-radius: .6rem; font-size: .9rem; }
+  #realauth .row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+  #realauth input { font: inherit; font-size: .85rem; padding: .4rem .6rem; border-radius: .45rem; border: 1px solid var(--line); background: var(--panel2); color: var(--ink); min-width: 0; }
+  #keyinput { flex: 1 1 14rem; }
+  #modelinput { flex: 1 1 16rem; }
+  .authnote { color: var(--muted); font-size: .8rem; margin-top: .45rem; }
+
+  .scenarios { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+  .scenarios button {
+    font: inherit; font-size: .84rem; padding: .35rem .8rem; border-radius: 2rem; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel2); color: var(--muted);
+  }
+  .scenarios button.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+  #scdesc { font-size: .86rem; color: var(--muted); margin: 0 0 1rem; }
+  #scdesc code { font-size: .82em; }
+
+  .editors { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
+  .editor label { display: flex; align-items: baseline; gap: .5rem; font-size: .78rem; color: var(--muted); margin-bottom: .3rem; }
+  .editor label .path { font-weight: 700; color: var(--ink); }
+  .editor textarea {
+    width: 100%; resize: vertical; font-size: 13px; line-height: 1.55; color: var(--ink);
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: .55rem; padding: .7rem .8rem;
+  }
+  .editor textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+
+  .goalrow { display: flex; gap: .7rem; margin-top: 1rem; flex-wrap: wrap; }
+  .goalrow input {
+    flex: 1 1 18rem; font: inherit; padding: .6rem .8rem; border-radius: .6rem;
+    border: 1px solid var(--line); background: var(--panel2); color: var(--ink); min-width: 0;
+  }
+  .goalrow input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+
+  #progress { display: none; margin-top: 1rem; padding: .6rem .9rem; border: 1px solid var(--line); border-radius: .6rem; background: var(--panel2); font-size: .86rem; }
+  #progress .mono { font-size: .8rem; color: var(--muted); }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #resetnote { display: none; margin-top: .7rem; font-size: .82rem; color: var(--muted); }
+
+  .outs { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; margin-top: 1.1rem; }
+  .out h3 { font-size: .82rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 .4rem; font-weight: 700; }
+  .out pre, .filecard pre {
+    margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: .55rem;
+    padding: .7rem .8rem; font-size: 12.5px; line-height: 1.55; overflow: auto;
+    max-height: 340px; min-height: 3rem; white-space: pre;
+  }
+  #diffpane .add { color: var(--add); background: var(--add-bg); display: inline-block; min-width: 100%; }
+  #diffpane .del { color: var(--del); background: var(--del-bg); display: inline-block; min-width: 100%; }
+  #diffpane .hdr { color: var(--hdr); }
+  .filecard { margin-bottom: .9rem; }
+  .filecard:last-child { margin-bottom: 0; }
+  .filecard .fhead { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .35rem; }
+  .filecard .fpath { font-size: .82rem; font-weight: 700; }
+  .badge { font-size: .68rem; font-weight: 700; padding: .1rem .5rem; border-radius: 1rem; letter-spacing: .02em; }
+  .badge.det { background: var(--add-bg); color: var(--add); }
+  .badge.llm { background: var(--accent-soft); color: var(--accent); }
+  .badge.new { background: #8b5cf622; color: #8b5cf6; }
+  .badge.gone { background: var(--del-bg); color: var(--del); }
+  .badge.wait { background: var(--code-bg); color: var(--muted); }
+  .upsell { margin-top: 1rem; font-size: .88rem; padding: .7rem .9rem; border-radius: .6rem; background: var(--accent-soft); display: none; }
+
+  /* ---------- how it works ---------- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1.5rem; }
+  .step { background: var(--panel); border: 1px solid var(--line); border-radius: .8rem; padding: 1.1rem 1.2rem; }
+  .step .n { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 800; font-size: .85rem; margin-bottom: .6rem; }
+  .step h3 { margin: 0 0 .35rem; font-size: 1rem; }
+  .step h3 code { font-size: .92em; }
+  .step p { margin: 0; font-size: .9rem; color: var(--muted); }
+
+  .survives { margin-top: 2.2rem; display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .6rem; }
+  .survives div { display: flex; gap: .55rem; align-items: baseline; font-size: .92rem; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: .6rem; padding: .55rem .8rem; }
+  .survives div::before { content: "✓"; color: var(--add); font-weight: 800; }
+
+  /* ---------- get it ---------- */
+  .ecosys { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.5rem; }
+  .eco { background: var(--panel); border: 1px solid var(--line); border-radius: .8rem; padding: 1.2rem 1.3rem; }
+  .eco h3 { margin: 0 0 .3rem; }
+  .eco p { font-size: .9rem; color: var(--muted); margin: 0 0 .8rem; }
+  .eco pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: .55rem; padding: .6rem .8rem; font-size: 12.5px; overflow-x: auto; margin: 0 0 .8rem; }
+  .eco .links { font-size: .88rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+
+  footer { border-top: 1px solid var(--line); margin-top: 4.5rem; padding: 1.8rem 0 2.4rem; font-size: .88rem; color: var(--muted); }
+  footer .frow { display: flex; flex-wrap: wrap; gap: 1.2rem; align-items: baseline; }
+
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; gap: 2rem; }
+    .steps { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    .editors, .outs, .ecosys { grid-template-columns: 1fr; }
+    section { margin: 3rem auto; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+<nav>
+  <a class="brand" href="#">
+    <svg class="logo" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="5" stroke="var(--accent)" stroke-width="2"/><path d="M8 12h8M12 8v8" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/></svg>
+    patchling
+  </a>
+  <span class="spacer"></span>
+  <a class="nl" href="#playground">Playground</a>
+  <a class="nl" href="#how">How it works</a>
+  <a class="nl" href="https://255bits.github.io/patchling-examples/" target="_blank" rel="noopener">Demos</a>
+  <a class="nl" href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">GitHub</a>
+</nav>
+
+<section class="hero">
+  <div>
+    <p class="kicker">A bounded primitive, not an agent</p>
+    <h1>Apply the AI diffs <span class="rej">git&nbsp;apply</span>&nbsp;<span class="acc">rejects</span>.</h1>
+    <p class="sub">Files in, files out. Hand patchling a <code class="inline">{ path: content }</code> map and a plain-English goal: <b>generateDiff</b> returns a unified git diff, and <b>smartapply</b> melds it into your source — deterministically when it can, per-file LLM repair only when it must. Drifted line numbers, fuzzy hunks, renames, new files: applied.</p>
+    <div class="installs">
+      <span class="pill"><span class="lang">js</span><code>npm install patchling</code><button data-copy="npm install patchling">copy</button></span>
+      <span class="pill"><span class="lang">py</span><code>pip install patchling</code><button data-copy="pip install patchling">copy</button></span>
+    </div>
+    <div class="ctas">
+      <a class="btn primary" href="#playground">▶ Run it in your browser — no key needed</a>
+      <a class="btn" href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">GitHub</a>
+    </div>
+    <p class="formerly">Zero-dependency ESM · runs in the browser and Node 18+ · formerly <b>gptdiff</b>.</p>
+  </div>
+  <div class="window" aria-hidden="true">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">the-diff-your-llm-actually-wrote.patch</span></div>
+    <pre><span class="hdr">--- a/main.py</span>
+<span class="hdr">+++ b/main.py</span>
+<span class="hdr">@@ -1,4 +1,4 @@</span>
+<span class="del">-from greet import greet</span>
+<span class="add">+from greet import farewell</span>
+
+ def main():
+<span class="del">-    greet("world")   <b>← file says "World". oops.</b></span>
+<span class="add">+    farewell("world")</span>
+
+<span class="cmt">$ git apply changes.patch</span>
+<span class="bad">error: patch failed: main.py:1 ✗</span>
+
+<span class="cmt">&gt; await smartapply(diff, files)</span>
+<span class="ok">{ "greet.py": ✓ deterministic, "main.py": ✓ LLM-resolved }</span></pre>
+  </div>
+</section>
+
+<section id="playground">
+  <p class="kicker">Live playground</p>
+  <h2>See it run. Right here.</h2>
+  <p class="lead">This page imports <code class="inline">patchling</code> straight from <a href="https://esm.sh/patchling" target="_blank" rel="noopener">esm.sh</a> and runs the real <code class="inline">generateDiff → smartapply</code> pipeline. Demo mode replays a canned model response with simulated streaming — no key, no network calls. Sign in for real transformations on your own code.</p>
+
+  <div class="play-card">
+    <div class="modes" role="tablist">
+      <button id="mode-demo" class="on">Demo — no key needed</button>
+      <button id="mode-real">Real — your NanoGPT key</button>
+    </div>
+
+    <p id="demonote">▶ <b>Canned replay.</b> The "model response" below is pre-baked and streamed locally, but the diff parsing and <code class="inline">smartapply</code> engine are the real library running in your browser.</p>
+
+    <div id="realauth">
+      <div class="row" id="signedout">
+        <button class="btn primary" id="signin">Sign in with NanoGPT</button>
+        <span style="color:var(--muted)">or</span>
+        <input id="keyinput" placeholder="paste an API key: sk-nano-…" />
+        <button class="btn" id="keysave">Save</button>
+      </div>
+      <div class="row" id="signedin" style="display:none">
+        <span>Signed in ✓</span>
+        <button class="btn" id="signout">Sign out</button>
+      </div>
+      <div class="row" style="margin-top:.6rem">
+        <label for="modelinput" style="font-size:.8rem;color:var(--muted)">model</label>
+        <input id="modelinput" class="mono" />
+      </div>
+      <p class="authnote">Keys come from <a href="https://nano-gpt.com" target="_blank" rel="noopener">nano-gpt.com</a> → Settings → API. Your key stays in this browser (localStorage) and is sent only to nano-gpt.com. OAuth sign-in requires the page to be served over http(s).</p>
+    </div>
+
+    <div class="scenarios" id="scenarios"></div>
+    <p id="scdesc"></p>
+
+    <div class="editors" id="editors"></div>
+
+    <div class="goalrow">
+      <input id="goal" placeholder="What should change? Plain English." />
+      <button class="btn primary" id="run">▶ Diff &amp; smartapply</button>
+    </div>
+    <p id="resetnote">Demo mode replays a canned response, so the files were reset to match the scenario. Switch to <b>Real</b> mode to transform your own edits.</p>
+
+    <div id="progress">
+      <span class="spin">◐</span> <b id="phase">starting…</b> · ⏱ <span id="elapsed">0.0</span>s
+      <span class="mono">· streamed <span id="chars">0</span> chars</span>
+    </div>
+
+    <div class="outs">
+      <div class="out">
+        <h3>Unified diff <span id="diffsrc" style="text-transform:none;letter-spacing:0;font-weight:400"></span></h3>
+        <pre id="diffpane">The model's response streams here.</pre>
+      </div>
+      <div class="out">
+        <h3>Files out</h3>
+        <div id="results"><pre>smartapply's returned file map lands here.</pre></div>
+      </div>
+    </div>
+
+    <div class="upsell" id="upsell">
+      That whole sequence — streamed diff, deterministic patch, LLM repair of the broken hunk — was the real library. <a href="#" id="upsell-real">Switch to Real mode</a> to run it on your own files with your own goal, or <code class="inline">npm install patchling</code> to embed it.
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <p class="kicker">How it works</p>
+  <h2>Three calls. No filesystem. No agent loop.</h2>
+  <p class="lead">patchling is deliberately bounded: it transforms an in-memory file map and hands control straight back to you. You own the loop, the UI, and the storage.</p>
+  <div class="steps">
+    <div class="step">
+      <span class="n">1</span>
+      <h3><code>buildEnvironment(files)</code></h3>
+      <p>Serialize your <code class="inline">{ path: content }</code> map into the environment string the model sees. No disk access — it runs in the browser and Node 18+.</p>
+    </div>
+    <div class="step">
+      <span class="n">2</span>
+      <h3><code>generateDiff(env, goal)</code></h3>
+      <p>One LLM call returns a unified git diff. Stream it live with <code class="inline">onToken</code>, meter it with <code class="inline">onUsage</code>, or inject your own client with <code class="inline">callLlm</code>.</p>
+    </div>
+    <div class="step">
+      <span class="n">3</span>
+      <h3><code>smartapply(diff, files)</code></h3>
+      <p>Deterministic patching first — context-matched, tolerant of drifted line numbers. Only files that still fail get a per-file LLM rewrite. Returns a <b>new</b> map; failures never partially write.</p>
+    </div>
+  </div>
+
+  <h2 style="margin-top:3rem;font-size:1.25rem">LLM diffs are sloppy. smartapply survives:</h2>
+  <div class="survives">
+    <div>drifted <code class="inline">@@</code> line numbers</div>
+    <div>context that doesn't quite match</div>
+    <div>malformed <code class="inline">--</code>/<code class="inline">++</code> headers</div>
+    <div>headerless diffs</div>
+    <div><code class="inline">*** Begin Patch</code> style</div>
+    <div>new files &amp; deletions</div>
+    <div>multi-file diffs, applied concurrently</div>
+    <div><code class="inline">&lt;think&gt;</code> &amp; reasoning preambles</div>
+  </div>
+</section>
+
+<section id="get">
+  <p class="kicker">Get it</p>
+  <h2>One primitive, two runtimes.</h2>
+  <div class="ecosys">
+    <div class="eco">
+      <h3>JavaScript</h3>
+      <p>Zero-dependency ESM. Import from npm or straight off a CDN — this page does.</p>
+      <pre><code>npm install patchling
+<span style="color:var(--hdr)"># or, in the browser, no build step:</span>
+import { generateDiff, smartapply }
+  from "https://esm.sh/patchling";</code></pre>
+      <div class="links">
+        <a href="https://github.com/255BITS/patchling" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://www.npmjs.com/package/patchling" target="_blank" rel="noopener">npm</a>
+        <a href="https://255bits.github.io/patchling-examples/" target="_blank" rel="noopener">Live examples</a>
+      </div>
+    </div>
+    <div class="eco">
+      <h3>Python</h3>
+      <p>The same bounded primitive, ported to Python.</p>
+      <pre><code>pip install patchling
+
+from patchling import generate_diff, smartapply</code></pre>
+      <div class="links">
+        <a href="https://github.com/255BITS/patchling-py" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://pypi.org/project/patchling/" target="_blank" rel="noopener">PyPI</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container frow">
+    <span><b>patchling</b> · MIT</span>
+    <span>built by <a href="https://255labs.xyz" target="_blank" rel="noopener">255labs</a></span>
+    <span>powers <a href="https://nanoodle.com" target="_blank" rel="noopener">nanoodle.com</a></span>
+    <span>formerly <a href="https://github.com/255BITS/gptdiff" target="_blank" rel="noopener">gptdiff</a></span>
+    <span><a href="https://255bits.github.io/patchling-examples/" target="_blank" rel="noopener">live demos</a></span>
+  </div>
+</footer>
+</div>
+
+<script type="module">
+import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile }
+  from "https://esm.sh/patchling";
+import { registerClient, beginSignIn, completeSignIn }
+  from "https://esm.sh/patchling/oauth";
+
+const $ = (id) => document.getElementById(id);
+const DEFAULT_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* SCENARIOS:BEGIN — pre-baked demo-mode scenarios. `response` is the canned
+   model reply streamed by the fake client; `applied` is what the fake apply
+   model returns for files whose hunk fails deterministic patching. */
+const SCENARIOS = {
+  goodbye: {
+    label: "Say goodbye · heals a sloppy diff",
+    desc: 'The canned model reply gets one context line wrong — it wrote greet("world") but the file says greet("World"). git apply rejects that hunk; watch smartapply patch greet.py deterministically, then repair main.py with a per-file LLM pass.',
+    goal: "Rename greet to farewell and say goodbye instead of hello",
+    files: {
+      "greet.py": 'def greet(name):\n    print("Hello, " + name + "!")\n',
+      "main.py": 'from greet import greet\n\ndef main():\n    greet("World")\n\nif __name__ == "__main__":\n    main()\n',
+    },
+    response: 'Renaming the function and flipping the greeting in both files.\n\n```diff\n--- a/greet.py\n+++ b/greet.py\n@@ -7,2 +7,2 @@\n-def greet(name):\n-    print("Hello, " + name + "!")\n+def farewell(name):\n+    print("Goodbye, " + name + "!")\n--- a/main.py\n+++ b/main.py\n@@ -1,4 +1,4 @@\n-from greet import greet\n+from greet import farewell\n \n def main():\n-    greet("world")\n+    farewell("world")\n```\n\nBoth call sites now use `farewell`.',
+    applied: {
+      "main.py": 'from greet import farewell\n\ndef main():\n    farewell("World")\n\nif __name__ == "__main__":\n    main()\n',
+    },
+  },
+  config: {
+    label: "Extract config · creates a new file",
+    desc: "A multi-file change: the diff creates config.py from scratch and rewires greet.py to import it. Both hunks apply deterministically — zero apply-side tokens.",
+    goal: "Move the greeting text into a new config.py and use it",
+    files: {
+      "greet.py": 'def greet(name):\n    print("Hello, " + name + "!")\n\ndef main():\n    greet("World")\n\nif __name__ == "__main__":\n    main()\n',
+    },
+    response: 'Creating config.py and importing it from greet.py.\n\n```diff\n--- /dev/null\n+++ b/config.py\n@@ -0,0 +1,2 @@\n+GREETING = "Hello"\n+PUNCTUATION = "!"\n--- a/greet.py\n+++ b/greet.py\n@@ -1,2 +1,4 @@\n+from config import GREETING, PUNCTUATION\n+\n def greet(name):\n-    print("Hello, " + name + "!")\n+    print(GREETING + ", " + name + PUNCTUATION)\n```',
+    applied: {
+      "config.py": 'GREETING = "Hello"\nPUNCTUATION = "!"\n',
+      "greet.py": 'from config import GREETING, PUNCTUATION\n\ndef greet(name):\n    print(GREETING + ", " + name + PUNCTUATION)\n\ndef main():\n    greet("World")\n\nif __name__ == "__main__":\n    main()\n',
+    },
+  },
+};
+/* SCENARIOS:END */
+
+/* ---------- state ---------- */
+let mode = "demo";                    // "demo" | "real"
+let scenarioKey = "goodbye";
+let files = {};                       // current { path: content } shown in the editors
+let running = false;
+
+/* ---------- key + model storage ---------- */
+const getKey = () => localStorage.getItem("pl_key");
+const setKey = (k) => (k ? localStorage.setItem("pl_key", k) : localStorage.removeItem("pl_key"));
+$("modelinput").value = localStorage.getItem("pl_model") || DEFAULT_MODEL;
+$("modelinput").addEventListener("change", () => localStorage.setItem("pl_model", $("modelinput").value.trim() || DEFAULT_MODEL));
+
+/* ---------- OAuth (Sign in with NanoGPT, PKCE) ---------- */
+// NanoGPT canonicalizes the loopback host to "localhost"; hop there so the
+// redirect returns to the same origin.
+if (location.hostname === "127.0.0.1") location.hostname = "localhost";
+const REDIRECT_URI = location.origin + location.pathname;
+
+async function clientId() {
+  const cached = JSON.parse(localStorage.getItem("pl_client") || "null");
+  if (cached && cached.redirect === REDIRECT_URI) return cached.id;
+  const { client_id } = await registerClient({ clientName: "patchling.app", redirectUri: REDIRECT_URI });
+  localStorage.setItem("pl_client", JSON.stringify({ id: client_id, redirect: REDIRECT_URI }));
+  return client_id;
+}
+
+$("signin").addEventListener("click", async () => {
+  try {
+    if (location.protocol === "file:") throw new Error("OAuth needs the page served over http(s) — use the paste-a-key box instead.");
+    await beginSignIn({ clientId: await clientId(), redirectUri: REDIRECT_URI });
+  } catch (e) { alert("Sign-in failed: " + e.message); }
+});
+$("keysave").addEventListener("click", () => {
+  const k = $("keyinput").value.trim();
+  if (k) { setKey(k); $("keyinput").value = ""; renderAuth(); }
+});
+$("signout").addEventListener("click", () => { setKey(null); renderAuth(); });
+
+function renderAuth() {
+  const signed = !!getKey();
+  $("signedout").style.display = signed ? "none" : "flex";
+  $("signedin").style.display = signed ? "flex" : "none";
+  renderRun();
+}
+
+/* ---------- mode toggle ---------- */
+function setMode(m) {
+  mode = m;
+  $("mode-demo").classList.toggle("on", m === "demo");
+  $("mode-real").classList.toggle("on", m === "real");
+  $("demonote").style.display = m === "demo" ? "" : "none";
+  $("realauth").style.display = m === "real" ? "block" : "none";
+  renderRun();
+}
+$("mode-demo").addEventListener("click", () => setMode("demo"));
+$("mode-real").addEventListener("click", () => setMode("real"));
+$("upsell-real").addEventListener("click", (e) => {
+  e.preventDefault();
+  setMode("real");
+  $("playground").scrollIntoView({ behavior: "smooth" });
+});
+
+function renderRun() {
+  const ok = !running && (mode === "demo" || !!getKey());
+  $("run").disabled = !ok;
+  $("run").textContent = mode === "demo" ? "▶ Run the demo" : "▶ Diff & smartapply";
+  if (mode === "real" && !getKey()) $("run").title = "Sign in or paste a key first";
+  else $("run").title = "";
+}
+
+/* ---------- scenarios + editors ---------- */
+function renderScenarios() {
+  const wrap = $("scenarios");
+  wrap.innerHTML = "";
+  for (const [key, s] of Object.entries(SCENARIOS)) {
+    const b = document.createElement("button");
+    b.textContent = s.label;
+    b.classList.toggle("on", key === scenarioKey);
+    b.addEventListener("click", () => selectScenario(key));
+    wrap.appendChild(b);
+  }
+  $("scdesc").textContent = SCENARIOS[scenarioKey].desc;
+}
+
+function selectScenario(key) {
+  scenarioKey = key;
+  files = { ...SCENARIOS[key].files };
+  $("goal").value = SCENARIOS[key].goal;
+  renderScenarios();
+  renderEditors();
+  clearOutputs();
+}
+
+function renderEditors() {
+  const wrap = $("editors");
+  wrap.innerHTML = "";
+  for (const [path, content] of Object.entries(files)) {
+    const div = document.createElement("div");
+    div.className = "editor";
+    const label = document.createElement("label");
+    const p = document.createElement("span"); p.className = "path mono"; p.textContent = path;
+    label.append(p);
+    const ta = document.createElement("textarea");
+    ta.rows = Math.min(14, Math.max(6, content.split("\n").length + 1));
+    ta.value = content;
+    ta.addEventListener("input", () => { files[path] = ta.value; });
+    div.append(label, ta);
+    wrap.appendChild(div);
+  }
+}
+
+function clearOutputs() {
+  $("diffpane").textContent = "The model's response streams here.";
+  $("results").innerHTML = "<pre>smartapply's returned file map lands here.</pre>";
+  $("diffsrc").textContent = "";
+  $("upsell").style.display = "none";
+  $("resetnote").style.display = "none";
+}
+
+/* ---------- fake (demo-mode) LLM clients ---------- */
+// Streams `text` through onToken in small chunks so demo mode *feels* like a
+// live completion, then resolves. Purely local — no network.
+async function streamFake(text, onToken) {
+  let i = 0;
+  while (i < text.length) {
+    const n = 2 + Math.floor(Math.random() * 6);
+    if (onToken) onToken(text.slice(i, i + n));
+    i += n;
+    await sleep(4 + Math.random() * 14);
+  }
+}
+
+// Injected via generateDiff's opts.callLlm — same contract as the real client.
+function makeFakeCallLlm(scn) {
+  return async ({ onToken }) => {
+    await sleep(350); // a beat of "thinking"
+    await streamFake(scn.response, onToken);
+    return { choices: [{ message: { content: scn.response } }] };
+  };
+}
+
+// Injected via smartapply's opts.callLlmForApply — only invoked for files the
+// deterministic patcher rejects (in the demo: the hunk with wrong context).
+function makeFakeApply(scn) {
+  return async (filePath, _original, _fileDiff, _model, opts = {}) => {
+    const out = scn.applied?.[filePath];
+    if (out == null) throw new Error("demo scenario has no canned apply for " + filePath);
+    await sleep(250);
+    await streamFake(out, opts.onToken);
+    return out;
+  };
+}
+
+/* ---------- rendering ---------- */
+function renderDiff(diff) {
+  const pane = $("diffpane");
+  pane.innerHTML = "";
+  if (!diff.trim()) { pane.textContent = "(no diff produced)"; return; }
+  for (const line of diff.split("\n")) {
+    const span = document.createElement("span");
+    span.textContent = line;
+    if (/^(\+\+\+|---|@@|diff )/.test(line)) span.className = "hdr";
+    else if (line.startsWith("+")) span.className = "add";
+    else if (line.startsWith("-")) span.className = "del";
+    pane.appendChild(span);
+    // The newline lives OUTSIDE the span: inline-block spans with a newline
+    // inside break mid-block and overlap adjacent lines.
+    pane.appendChild(document.createTextNode("\n"));
+  }
+}
+
+function fileCard(path) {
+  const card = document.createElement("div");
+  card.className = "filecard";
+  card.dataset.path = path;
+  const head = document.createElement("div");
+  head.className = "fhead";
+  const p = document.createElement("span"); p.className = "fpath mono"; p.textContent = path;
+  const b = document.createElement("span"); b.className = "badge wait"; b.textContent = "applying…";
+  head.append(p, b);
+  const pre = document.createElement("pre");
+  pre.textContent = "";
+  card.append(head, pre);
+  return card;
+}
+
+function setBadge(card, cls, text, title) {
+  const b = card.querySelector(".badge");
+  b.className = "badge " + cls;
+  b.textContent = text;
+  if (title) b.title = title;
+}
+
+/* ---------- the run ---------- */
+async function run() {
+  if (running) return;
+  const scn = SCENARIOS[scenarioKey];
+
+  // Demo mode replays a canned response, so it must run against the canned
+  // files. If the visitor edited them, reset (and say so) rather than lie.
+  if (mode === "demo") {
+    const pristine = JSON.stringify(files) === JSON.stringify(scn.files);
+    files = { ...scn.files };
+    $("goal").value = scn.goal;
+    if (!pristine) { renderEditors(); $("resetnote").style.display = "block"; }
+    else $("resetnote").style.display = "none";
+  } else {
+    $("resetnote").style.display = "none";
+  }
+
+  const goal = $("goal").value.trim();
+  if (!goal) return;
+  const inputFiles = { ...files };
+
+  running = true;
+  renderRun();
+  $("upsell").style.display = "none";
+  $("diffsrc").textContent = mode === "demo" ? "· canned replay" : "· live from NanoGPT";
+  $("diffpane").textContent = "";
+  $("results").innerHTML = "";
+  $("progress").style.display = "block";
+  document.querySelector("#progress .spin").style.display = "";
+  $("phase").textContent = "generating diff…";
+  let streamed = 0;
+  const addChars = (t) => { streamed += t.length; $("chars").textContent = streamed.toLocaleString(); };
+  $("chars").textContent = "0";
+  const t0 = performance.now();
+  const timer = setInterval(() => { $("elapsed").textContent = ((performance.now() - t0) / 1000).toFixed(1); }, 100);
+
+  const diffPane = $("diffpane");
+  const onDiffToken = (t) => {
+    addChars(t);
+    diffPane.textContent += t;
+    diffPane.scrollTop = diffPane.scrollHeight;
+  };
+
+  try {
+    const key = getKey();
+    const model = $("modelinput").value.trim() || DEFAULT_MODEL;
+    const genOpts = mode === "demo"
+      ? { callLlm: makeFakeCallLlm(scn), onToken: onDiffToken }
+      : { apiKey: key, model, onToken: onDiffToken };
+
+    const diff = await generateDiff(buildEnvironment(inputFiles), goal, genOpts);
+    renderDiff(diff);
+
+    const perFile = parseDiffPerFile(diff);
+    if (!diff.trim() || !perFile.length) {
+      $("results").innerHTML = "<pre>⚠ The model returned no applicable diff. Try rephrasing the goal.</pre>";
+      $("phase").textContent = "no diff";
+      return;
+    }
+
+    // One card per touched file, up front, so LLM-resolved files have a pane
+    // to stream into.
+    $("phase").textContent = "smartapply…";
+    const cards = new Map();
+    for (const [path] of perFile) {
+      const card = fileCard(path);
+      cards.set(path, card);
+      $("results").appendChild(card);
+    }
+
+    // Files that emit apply tokens went through the LLM fallback; silence
+    // means the deterministic patcher handled them.
+    const llmResolved = new Set();
+    const onApplyToken = (t, path) => {
+      addChars(t);
+      llmResolved.add(path);
+      const card = cards.get(path);
+      if (!card) return;
+      setBadge(card, "llm", "LLM-resolving…");
+      const pre = card.querySelector("pre");
+      pre.textContent += t;
+      pre.scrollTop = pre.scrollHeight;
+    };
+
+    const applyOpts = mode === "demo"
+      ? { callLlmForApply: makeFakeApply(scn), onToken: onApplyToken }
+      : { apiKey: key, model: DEFAULT_MODEL, onToken: onApplyToken };
+
+    const updated = await smartapply(diff, inputFiles, applyOpts);
+
+    for (const [path, card] of cards) {
+      const pre = card.querySelector("pre");
+      if (!(path in updated)) {
+        setBadge(card, "gone", "deleted");
+        pre.textContent = "(file deleted)";
+        continue;
+      }
+      pre.textContent = updated[path];
+      if (!(path in inputFiles)) {
+        setBadge(card, "new", "new file", "Created by the diff — applied deterministically.");
+      } else if (llmResolved.has(path)) {
+        setBadge(card, "llm", "LLM-resolved", "git apply / the deterministic patcher rejected this hunk; patchling rewrote the file with a per-file LLM pass.");
+      } else if (updated[path] !== inputFiles[path]) {
+        setBadge(card, "det", "deterministic · 0 tokens", "The hunk applied without any LLM call, even though its line numbers drifted.");
+      } else {
+        setBadge(card, "wait", "unchanged");
+      }
+    }
+
+    // Feed the results back into the editors so a second run iterates.
+    files = { ...updated };
+    renderEditors();
+
+    $("phase").textContent = "done";
+    document.querySelector("#progress .spin").style.display = "none";
+    if (mode === "demo") $("upsell").style.display = "block";
+  } catch (e) {
+    $("phase").textContent = "error";
+    document.querySelector("#progress .spin").style.display = "none";
+    $("results").innerHTML = "";
+    const pre = document.createElement("pre");
+    pre.textContent = "Error: " + e.message;
+    $("results").appendChild(pre);
+  } finally {
+    clearInterval(timer);
+    running = false;
+    renderRun();
+  }
+}
+
+$("run").addEventListener("click", run);
+$("goal").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !$("run").disabled) { e.preventDefault(); run(); }
+});
+
+/* ---------- copy-to-clipboard pills ---------- */
+for (const btn of document.querySelectorAll("[data-copy]")) {
+  btn.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(btn.dataset.copy);
+      const prev = btn.textContent;
+      btn.textContent = "copied ✓";
+      setTimeout(() => { btn.textContent = prev; }, 1200);
+    } catch { /* clipboard unavailable (e.g. some file:// contexts) */ }
+  });
+}
+
+/* ---------- boot ---------- */
+(async () => {
+  selectScenario(scenarioKey);
+  setMode("demo");
+  try {
+    // Finish an OAuth redirect if one is in flight (also sets the library's
+    // GPTDIFF_LLM_API_KEY override).
+    const token = await completeSignIn();
+    if (token) { setKey(token); setMode("real"); }
+  } catch (e) {
+    console.warn("OAuth completion failed:", e);
+  }
+  renderAuth();
+})();
+</script>
+</body>
+</html>
