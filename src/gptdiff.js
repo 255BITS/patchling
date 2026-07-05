@@ -83,6 +83,7 @@ export async function callLlmForDiff(systemPrompt, userPrompt, filesContent, mod
     baseUrl,
     budgetTokens = null,
     images = null,
+    onToken = null,
     callLlm = defaultCallLlm,
   } = opts;
 
@@ -116,6 +117,7 @@ export async function callLlmForDiff(systemPrompt, userPrompt, filesContent, mod
     maxTokens,
     temperature,
     budgetTokens,
+    onToken,
   });
 
   const { promptTokens, completionTokens, totalTokens } = usageFrom(response);
@@ -143,6 +145,11 @@ export async function callLlmForDiff(systemPrompt, userPrompt, filesContent, mod
  * @param {string} [opts.prepend]    text prepended to the system prompt
  * @param {number} [opts.budgetTokens]
  * @param {Array}  [opts.images]
+ * @param {(text: string) => void} [opts.onToken] stream callback — when
+ *   provided, the LLM response is streamed and this is called once per token
+ *   (content delta) as it arrives. Tokens are the raw model output (which may
+ *   include prose around the ```diff block); the resolved value is still the
+ *   extracted diff.
  * @param {Function} [opts.callLlm]  injectable LLM client (for testing)
  * @returns {Promise<string>} the unified diff text
  */
@@ -160,6 +167,7 @@ export async function generateDiff(environment, goal, opts = {}) {
     baseUrl: opts.baseUrl,
     budgetTokens: opts.budgetTokens ?? null,
     images: opts.images ?? null,
+    onToken: opts.onToken ?? null,
     callLlm: opts.callLlm,
   });
   return diff;
@@ -174,6 +182,10 @@ export async function generateDiff(environment, goal, opts = {}) {
  * @param {string} fileDiff
  * @param {string} model
  * @param {object} [opts]
+ * @param {(text: string) => void} [opts.onToken] stream callback, called once
+ *   per token of the rewritten file as it arrives. Note the streamed text is
+ *   the raw model output — `<think>` blocks are only stripped from the final
+ *   result by {@link callLlmForApplyWithThink}.
  * @returns {Promise<string>}
  */
 export async function callLlmForApply(filePath, originalContent, fileDiff, model, opts = {}) {
@@ -182,6 +194,7 @@ export async function callLlmForApply(filePath, originalContent, fileDiff, model
     baseUrl,
     extraPrompt = null,
     maxTokens = null,
+    onToken = null,
     callLlm = defaultCallLlm,
   } = opts;
 
@@ -212,6 +225,7 @@ ${fileDiff}
     messages,
     maxTokens,
     temperature: 0.0,
+    onToken,
   });
   return response.choices[0].message.content;
 }
@@ -247,6 +261,11 @@ export async function callLlmForApplyWithThink(filePath, originalContent, fileDi
  * @param {string} [opts.baseUrl]
  * @param {number} [opts.maxTokens]
  * @param {boolean} [opts.forceLlm] skip the deterministic fast path
+ * @param {(text: string, path: string) => void} [opts.onToken] stream
+ *   callback for LLM-resolved files. Files are processed concurrently, so
+ *   token calls for different files interleave; the second argument is the
+ *   file path the token belongs to, letting callers demultiplex. Files taken
+ *   by the deterministic fast path emit no tokens (no LLM call is made).
  * @param {Function} [opts.callLlmForApply] injectable single-file applier
  * @returns {Promise<Record<string, string>>}
  */
@@ -278,7 +297,12 @@ export async function smartapply(diffText, files, opts = {}) {
         }
       }
       // Fallback: the patch did not apply cleanly, let the LLM resolve it.
-      const updated = await callLlmForApplyWithThink(path, original, patch, model, applyOpts);
+      // Bind the file path into the stream callback so concurrent per-file
+      // streams can be told apart by the caller: onToken(text, path).
+      const fileOpts = opts.onToken
+        ? { ...applyOpts, onToken: (text) => opts.onToken(text, path) }
+        : applyOpts;
+      const updated = await callLlmForApplyWithThink(path, original, patch, model, fileOpts);
       result[path] = stripBadOutput(updated, original);
     }),
   );
