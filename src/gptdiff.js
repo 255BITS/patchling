@@ -72,6 +72,18 @@ function usageFrom(response) {
  * Build the prompt, call the LLM, and extract the unified diff from the
  * ```diff fenced blocks of the response.
  *
+ * @param {string} systemPrompt
+ * @param {string} userPrompt
+ * @param {string} filesContent
+ * @param {string} model
+ * @param {object} [opts]
+ * @param {number} [opts.temperature]
+ * @param {number} [opts.maxTokens]
+ * @param {string} [opts.apiKey]
+ * @param {string} [opts.baseUrl]
+ * @param {number} [opts.budgetTokens]
+ * @param {Array} [opts.images]
+ * @param {Function} [opts.callLlm]
  * @returns {Promise<{ fullResponse: string, diff: string, promptTokens: number,
  *   completionTokens: number, totalTokens: number }>}
  */
@@ -94,9 +106,12 @@ export async function callLlmForDiff(systemPrompt, userPrompt, filesContent, mod
     effectiveUserPrompt = fullSystemPrompt + '\n' + userPrompt;
   }
 
-  let userContent = effectiveUserPrompt + '\n' + filesContent;
+  const userText = effectiveUserPrompt + '\n' + filesContent;
+  /** @type {string | Array<{type: string, text?: string, image_url?: {url: string}}>} */
+  let userContent = userText;
   if (images && images.length) {
-    const blocks = [{ type: 'text', text: userContent }];
+    /** @type {Array<{type: string, text?: string, image_url?: {url: string}}>} */
+    const blocks = [{ type: 'text', text: userText }];
     for (const image of images) {
       const dataUrl = `data:${image.media_type};base64,${image.data}`;
       blocks.push({ type: 'image_url', image_url: { url: dataUrl } });
@@ -249,6 +264,11 @@ ${fileDiff}
  * Apply a diff to a single file's content, stripping `<think>` blocks and
  * reasoning preambles from the LLM response.
  *
+ * @param {string} filePath
+ * @param {string} originalContent
+ * @param {string} fileDiff
+ * @param {string} model
+ * @param {object} [opts]
  * @returns {Promise<string>} the cleaned file content
  */
 export async function callLlmForApplyWithThink(filePath, originalContent, fileDiff, model, opts = {}) {

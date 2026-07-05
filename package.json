@@ -4,10 +4,20 @@
   "description": "Generate and apply git diffs using LLMs — a browser-first JavaScript port of gptdiff (generateDiff + smartapply), wired to NanoGPT.",
   "type": "module",
   "main": "src/index.js",
+  "types": "./src/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./oauth": "./src/oauth.js",
-    "./llm": "./src/llm.js"
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./oauth": {
+      "types": "./src/oauth.d.ts",
+      "default": "./src/oauth.js"
+    },
+    "./llm": {
+      "types": "./src/llm.d.ts",
+      "default": "./src/llm.js"
+    }
   },
   "files": [
     "src"
@@ -25,7 +35,8 @@
     "prepublishOnly": "npm test",
     "test": "node --test",
     "test:live": "GPTDIFF_LIVE=1 node --test test/live.test.js",
-    "benchmark": "node benchmark/run.js"
+    "benchmark": "node benchmark/run.js",
+    "types": "tsc -p tsconfig.json"
   },
   "keywords": [
     "gptdiff",
@@ -40,5 +51,9 @@
   "license": "MIT",
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3"
   }
 }
