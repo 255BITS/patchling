@@ -1,6 +1,6 @@
 {
   "name": "patchling",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Natural-language code transformation as a browser-first JS primitive: generateDiff turns a plain-English goal into a git diff, and smartapply melds it into your source even when git apply would reject it. Wired to NanoGPT. Formerly gptdiff-js.",
   "type": "module",
   "main": "src/index.js",
