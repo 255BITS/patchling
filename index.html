@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>gptdiff-js — browser demo</title>
+  <title>patchling — browser demo</title>
   <style>
     :root { color-scheme: light dark; }
     body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <h1>gptdiff-js</h1>
+  <h1>patchling</h1>
   <p class="sub">Generate &amp; apply git diffs with an LLM — entirely in the browser, via NanoGPT.</p>
 
   <div class="auth">
@@ -87,7 +87,7 @@
       try {
         authStatus.textContent = 'Registering client…';
         const redirectUri = window.location.origin + window.location.pathname;
-        const reg = await registerClient({ clientName: 'gptdiff-js demo', redirectUri });
+        const reg = await registerClient({ clientName: 'patchling demo', redirectUri });
         $('clientId').value = reg.client_id;
         localStorage.setItem('gptdiff_client_id', reg.client_id);
         authStatus.textContent = `Registered client ${reg.client_id}. Now click “Sign in”.`;

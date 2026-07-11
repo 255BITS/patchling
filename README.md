@@ -8,13 +8,14 @@
 
 **Natural-language code transformation, browser-first.** Hand patchling an in-memory `{ path: content }` file map plus a plain-English goal; **`generateDiff`** returns a unified git diff, and **`smartapply`** melds that diff into your source — even when `git apply` would reject it (drifted lines, fuzzy hunks, renames, new files, deletions). It's a bounded primitive you embed in your own app, not an open-ended coding agent. Wired to [NanoGPT](https://nano-gpt.com) for completions (including "Sign in with NanoGPT" OAuth PKCE).
 
-Everything runs in the browser (and in Node 18+): no filesystem, no build step, zero runtime dependencies. The diff engine is a faithful port of the Python [gptdiff](https://github.com/255BITS/gptdiff); it operates on an in-memory file map instead of a directory on disk.
+Everything runs in the browser (and in Node 18+): no filesystem, no build step, zero runtime dependencies. The diff engine is a faithful port of the [Python patchling](https://github.com/255BITS/patchling-py) (formerly gptdiff); it operates on an in-memory file map instead of a directory on disk.
 
-See it in action: **[live browser demos →](https://255bits.github.io/gptdiff-js-examples/)**.
+See it in action: **[patchling.app](https://patchling.app)** (live demo on the homepage) · **[live browser demos →](https://255bits.github.io/patchling-examples/)**
 
 > **The family** —
-> [**gptdiff**](https://github.com/255BITS/gptdiff) (Python library + CLI) ·
-> **patchling** (this package — the browser/Node runtime) ·
+> [**patchling.app**](https://patchling.app) (project home + live demo) ·
+> **patchling** (this package — the browser/Node runtime, [npm](https://www.npmjs.com/package/patchling)) ·
+> [**patchling for Python**](https://github.com/255BITS/patchling-py) (library + CLI, [PyPI](https://pypi.org/project/patchling/)) ·
 > [**nanoodle.com**](https://nanoodle.com) (visual AI workflow editor built on it)
 
 ```js
@@ -40,7 +41,7 @@ npm install patchling
 import { generateDiff, smartapply } from 'patchling';
 ```
 
-**Browser, no build step** — it's zero-dependency ESM, so a CDN import works directly (once the package is published to npm):
+**Browser, no build step** — it's zero-dependency ESM, so a CDN import works directly:
 
 ```js
 import { generateDiff, smartapply } from 'https://esm.sh/patchling';
@@ -116,7 +117,7 @@ Deterministic, no-LLM patch application (the strict "basic" applier). `changed` 
 ## Differences from the Python package
 
 - **No filesystem.** `applyDiff`/`smartapply` take and return a `{ path: content }` map rather than reading/writing a project directory.
-- **Scope.** Only `generateDiff` + `smartapply` (and their dependencies) are ported — not the `gptdiff`/`gptpatch`/`plangptdiff` CLIs.
+- **Scope.** Only `generateDiff` + `smartapply` (and their dependencies) are ported — not the Python package's CLIs (`patchling`, `patchling-apply`).
 - **Dependency injection** replaces Python's `monkeypatch`: pass `callLlm` / `callLlmForApply` to test without a network.
 - **`fetch` + Web Crypto** replace `openai`/`requests`/`tiktoken`.
 
