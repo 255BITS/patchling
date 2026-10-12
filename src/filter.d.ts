@@ -6,10 +6,11 @@ export function createMemoryCache(): RelevanceCache;
 /**
  * Parse a yes/no relevance answer.
  *
- * Think tags and chain-of-thought reasoning blocks are removed first. The
- * decision is a leading standalone `yes` or `no` after whitespace, quotes,
- * markdown bold or backticks, and an `Answer:` or `Decision:` prefix. A word
- * later in the sentence does not count. Anything else is malformed (`null`);
+ * Think tags, one fenced block, and chain-of-thought reasoning are removed
+ * first. Whitespace, quotes, markdown bold or backticks, and one `Answer:`
+ * or `Decision:` prefix are wrappers. The first token must then be exactly
+ * `yes` or `no`, and the next character must be the end of the string,
+ * whitespace, or one of `. , ! : ; )`. Anything else is malformed (`null`);
  * callers include the file and do not cache it.
  *
  * @param {unknown} raw
@@ -20,8 +21,8 @@ export function parseRelevanceAnswer(raw: unknown): {
     cleaned: string;
 };
 /**
- * Character-length stand-in for a tokenizer (Python's fallback when tiktoken
- * is absent). Empty text is 0; anything else is at least 1.
+ * Code-point stand-in for a tokenizer. Empty text is 0. Otherwise
+ * `ceil(codePoints / 4)`. A surrogate pair counts as one code point.
  * @param {string} text
  * @returns {number}
  */
@@ -51,9 +52,10 @@ export function isIgnoredPath(filePath: string, patterns?: string[]): boolean;
  * `cache` is a {@link RelevanceCache}, a filesystem path (memory plus that
  * JSON file), `true` or omitted (a fresh in-memory cache for this call), or
  * `null` / `false` (disabled). The cache key hashes the prompt version, model,
- * output-token limit, reasoning effort, task, path, and the body that was
- * sent (after truncation). Each path is classified on its own, including
- * paths whose contents match.
+ * output-token limit, the reasoning effort actually sent, task, path, mode,
+ * preview note, and the body that was sent. A cache read failure is a miss.
+ * A cache write failure is logged and the run continues. Each path is
+ * classified on its own, including paths whose contents match.
  *
  * Binary files and files over `maxBytes` / `maxTokens` are not sent in full.
  * `onBinary` and `onOversize` are `include` (keep, no model call), `exclude`
@@ -127,7 +129,7 @@ export const DEFAULT_FILTER_MODEL: "xiaomi/mimo-v2.6-flash";
 export const DEFAULT_FILTER_CONCURRENCY: 8;
 /** UTF-8 size cap. `0` or `null` disables it. */
 export const DEFAULT_FILTER_MAX_BYTES: 200000;
-/** Input-token cap (characters / 4 when no tokenizer is bundled). `0` or `null` disables it. */
+/** Input-token cap (`ceil(code points / 4)`). `0` or `null` disables it. */
 export const DEFAULT_FILTER_MAX_TOKENS: 12000;
 /**
  * Completion cap for the yes/no call. High enough that a reasoning model's
@@ -198,31 +200,41 @@ export const DEFAULT_IGNORE_PATTERNS: string[];
  * In-memory relevance cache with an optional on-disk JSON file.
  *
  * The key is the SHA-256 of the exact classification inputs, length-prefixed
- * in this order: prompt version, model, output-token limit, reasoning effort,
- * intent, file path, and the content actually sent (after truncation). Two
- * paths never share a key, even when their contents match.
+ * in this order: prompt version, model, output-token limit, reasoning effort
+ * actually sent, task, path, mode (`full`, `truncated`, or `binary`), the
+ * preview note (or `""`), and the content actually sent. Two paths never
+ * share a key, even when their contents match. A full file and a preview
+ * truncated to the same bytes do not share a key either.
  */
 export class RelevanceCache {
     /**
      * SHA-256 hex of the length-prefixed classification inputs.
-     * Each field is its UTF-8 bytes, written as `byteLength`, a newline, the
+     * Each field is its UTF-8 bytes, written as `byteLength`, a colon, the
      * bytes, and a newline. Field order: prompt version, model, output-token
-     * limit, reasoning effort (`""` when omitted), intent, path, content.
+     * limit, reasoning effort actually sent (`""` when omitted or rejected),
+     * task, path, mode (`full`, `truncated`, or `binary`), note (or `""`),
+     * content.
      * @param {object} fields
      * @param {string} fields.model
-     * @param {string} fields.intent task text
+     * @param {string} [fields.intent] task text
+     * @param {string} [fields.task] task text when `intent` is omitted
      * @param {string} fields.path
      * @param {string} fields.content body sent to the model, after truncation
+     * @param {'full' | 'truncated' | 'binary'} [fields.mode] default `full`
+     * @param {string} [fields.note] exact preview note, or empty
      * @param {number} [fields.maxOutputTokens]
-     * @param {string | null} [fields.reasoningEffort]
+     * @param {string | null} [fields.reasoningEffort] effort actually sent
      * @param {number | string} [fields.promptVersion]
      * @returns {Promise<string>}
      */
     static makeKey(fields: {
         model: string;
-        intent: string;
+        intent?: string;
+        task?: string;
         path: string;
         content: string;
+        mode?: "full" | "truncated" | "binary";
+        note?: string;
         maxOutputTokens?: number;
         reasoningEffort?: string | null;
         promptVersion?: number | string;

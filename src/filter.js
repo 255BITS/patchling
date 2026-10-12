@@ -26,7 +26,7 @@ export const DEFAULT_FILTER_CONCURRENCY = 8;
 /** UTF-8 size cap. `0` or `null` disables it. */
 export const DEFAULT_FILTER_MAX_BYTES = 200_000;
 
-/** Input-token cap (characters / 4 when no tokenizer is bundled). `0` or `null` disables it. */
+/** Input-token cap (`ceil(code points / 4)`). `0` or `null` disables it. */
 export const DEFAULT_FILTER_MAX_TOKENS = 12_000;
 
 /**
@@ -88,7 +88,7 @@ const POLICIES = ['include', 'exclude', 'truncate'];
 
 const LEADING_WRAPPER = /^(?:answer|decision)\s*:\s*|^[\s"'`*_“”‘’]+/i;
 const TRAILING_WRAPPER = /[\s"'`*_“”‘’]+$/;
-const LEADING_YES_NO = /^(yes|no)\b/i;
+const YES_NO_TOKEN = /^(yes|no)(?=$|\s|[.,!:;)])/i;
 const FENCE_LINE = /^```[a-zA-Z0-9_-]*\s*$/;
 
 const SYSTEM_PROMPT = (
@@ -153,9 +153,11 @@ const SYSTEM_PROMPT = (
  * In-memory relevance cache with an optional on-disk JSON file.
  *
  * The key is the SHA-256 of the exact classification inputs, length-prefixed
- * in this order: prompt version, model, output-token limit, reasoning effort,
- * intent, file path, and the content actually sent (after truncation). Two
- * paths never share a key, even when their contents match.
+ * in this order: prompt version, model, output-token limit, reasoning effort
+ * actually sent, task, path, mode (`full`, `truncated`, or `binary`), the
+ * preview note (or `""`), and the content actually sent. Two paths never
+ * share a key, even when their contents match. A full file and a preview
+ * truncated to the same bytes do not share a key either.
  */
 export class RelevanceCache {
   /**
@@ -172,16 +174,21 @@ export class RelevanceCache {
 
   /**
    * SHA-256 hex of the length-prefixed classification inputs.
-   * Each field is its UTF-8 bytes, written as `byteLength`, a newline, the
+   * Each field is its UTF-8 bytes, written as `byteLength`, a colon, the
    * bytes, and a newline. Field order: prompt version, model, output-token
-   * limit, reasoning effort (`""` when omitted), intent, path, content.
+   * limit, reasoning effort actually sent (`""` when omitted or rejected),
+   * task, path, mode (`full`, `truncated`, or `binary`), note (or `""`),
+   * content.
    * @param {object} fields
    * @param {string} fields.model
-   * @param {string} fields.intent task text
+   * @param {string} [fields.intent] task text
+   * @param {string} [fields.task] task text when `intent` is omitted
    * @param {string} fields.path
    * @param {string} fields.content body sent to the model, after truncation
+   * @param {'full' | 'truncated' | 'binary'} [fields.mode] default `full`
+   * @param {string} [fields.note] exact preview note, or empty
    * @param {number} [fields.maxOutputTokens]
-   * @param {string | null} [fields.reasoningEffort]
+   * @param {string | null} [fields.reasoningEffort] effort actually sent
    * @param {number | string} [fields.promptVersion]
    * @returns {Promise<string>}
    */
@@ -196,10 +203,14 @@ export class RelevanceCache {
     const effort = fields.reasoningEffort == null || fields.reasoningEffort === undefined
       ? ''
       : String(fields.reasoningEffort);
-    const intent = String(fields.intent ?? '');
+    const task = String(fields.task ?? fields.intent ?? '');
     const path = String(fields.path);
+    const mode = fields.mode == null || fields.mode === undefined ? 'full' : String(fields.mode);
+    const note = fields.note == null || fields.note === undefined ? '' : String(fields.note);
     const content = String(fields.content);
-    return sha256(lengthPrefixed([promptVersion, model, tokenLimit, effort, intent, path, content]));
+    return sha256(lengthPrefixed([
+      promptVersion, model, tokenLimit, effort, task, path, mode, note, content,
+    ]));
   }
 
   /**
@@ -317,7 +328,7 @@ async function getWebCrypto() {
 
 /**
  * Length-prefixed UTF-8 encoding shared with the Python filter.
- * Each part is `decimalByteLength + "\\n" + utf8 + "\\n"`.
+ * Each part is `decimalByteLength + ":" + utf8 + "\\n"`.
  * @param {string[]} parts
  * @returns {Uint8Array}
  */
@@ -329,7 +340,7 @@ function lengthPrefixed(parts) {
   const out = new Uint8Array(size);
   let offset = 0;
   for (const bytes of encoded) {
-    const header = encoder.encode(`${bytes.length}\n`);
+    const header = encoder.encode(`${bytes.length}:`);
     out.set(header, offset);
     offset += header.length;
     out.set(bytes, offset);
@@ -388,10 +399,11 @@ function unwrapAnswerWrappers(text) {
 /**
  * Parse a yes/no relevance answer.
  *
- * Think tags and chain-of-thought reasoning blocks are removed first. The
- * decision is a leading standalone `yes` or `no` after whitespace, quotes,
- * markdown bold or backticks, and an `Answer:` or `Decision:` prefix. A word
- * later in the sentence does not count. Anything else is malformed (`null`);
+ * Think tags, one fenced block, and chain-of-thought reasoning are removed
+ * first. Whitespace, quotes, markdown bold or backticks, and one `Answer:`
+ * or `Decision:` prefix are wrappers. The first token must then be exactly
+ * `yes` or `no`, and the next character must be the end of the string,
+ * whitespace, or one of `. , ! : ; )`. Anything else is malformed (`null`);
  * callers include the file and do not cache it.
  *
  * @param {unknown} raw
@@ -412,7 +424,7 @@ export function parseRelevanceAnswer(raw) {
   const cleaned = text.trim();
   const unwrapped = unwrapAnswerWrappers(cleaned);
   if (!unwrapped) return { decision: null, cleaned };
-  const match = LEADING_YES_NO.exec(unwrapped);
+  const match = YES_NO_TOKEN.exec(unwrapped);
   if (!match) return { decision: null, cleaned };
   return { decision: /** @type {'yes' | 'no'} */ (match[1].toLowerCase()), cleaned };
 }
@@ -464,14 +476,27 @@ function resolveCache(cache) {
 }
 
 /**
- * Character-length stand-in for a tokenizer (Python's fallback when tiktoken
- * is absent). Empty text is 0; anything else is at least 1.
+ * Code-point stand-in for a tokenizer. Empty text is 0. Otherwise
+ * `ceil(codePoints / 4)`. A surrogate pair counts as one code point.
  * @param {string} text
  * @returns {number}
  */
 export function countTokens(text) {
-  if (!text) return 0;
-  return Math.max(1, Math.floor(String(text).length / 4));
+  if (text == null || text === '') return 0;
+  const codePoints = Array.from(String(text)).length;
+  if (!codePoints) return 0;
+  return Math.ceil(codePoints / 4);
+}
+
+/**
+ * First `count` Unicode code points. Never splits a surrogate pair.
+ * @param {string} text
+ * @param {number} count
+ * @returns {string}
+ */
+function takeCodePoints(text, count) {
+  if (count <= 0) return '';
+  return Array.from(text).slice(0, count).join('');
 }
 
 /**
@@ -483,7 +508,7 @@ export function countTokens(text) {
 function truncateText(text, maxBytes, maxTokens) {
   let out = text;
   if (maxTokens && countTokens(out) > maxTokens) {
-    out = out.slice(0, maxTokens * 4);
+    out = takeCodePoints(out, maxTokens * 4);
   }
   if (maxBytes) out = truncateUtf8(out, maxBytes);
   return out;
@@ -607,6 +632,7 @@ function binaryBytes(bytes) {
   }
   const text = decodeUtf8AllowingShortTail(sample);
   if (text == null) return true;
+  if (sample.length > 0 && text === '') return true;
   return textLooksBinary(text);
 }
 
@@ -632,6 +658,8 @@ function textLooksBinary(sample) {
 function coerceText(content) {
   if (typeof content === 'string') return content;
   if (content instanceof Uint8Array) {
+    const text = decodeUtf8AllowingShortTail(content);
+    if (text != null) return text;
     return new TextDecoder('utf-8', { fatal: false }).decode(content);
   }
   const name = content === null ? 'null' : typeof content;
@@ -730,18 +758,40 @@ function buildUserPrompt(task, path, body, note) {
 }
 
 /**
+ * A response that is not a chat-completion envelope. The caller fails that
+ * file open and does not retry it.
+ * @param {string} detail
+ * @returns {Error}
+ */
+function envelopeError(detail) {
+  const err = new Error(detail);
+  /** @type {{ envelope?: boolean }} */ (err).envelope = true;
+  return err;
+}
+
+/**
  * @param {unknown} response
  * @returns {{ raw: string, promptTokens: number, completionTokens: number, tokens: number }}
  */
 function usageAndText(response) {
-  const message = /** @type {{ choices?: Array<{ message?: { content?: string | null } }>, usage?: Record<string, number> }} */ (response);
-  const content = message?.choices?.[0]?.message?.content ?? '';
-  const usage = message?.usage || {};
+  if (!response || typeof response !== 'object' || Array.isArray(response)) {
+    throw envelopeError('relevance response was not JSON');
+  }
+  const body = /** @type {{ choices?: unknown, usage?: Record<string, number> }} */ (response);
+  if (!Array.isArray(body.choices) || body.choices.length === 0) {
+    throw envelopeError('relevance response envelope was incomplete');
+  }
+  const message = /** @type {{ message?: { content?: unknown } }} */ (body.choices[0]).message;
+  if (!message || message.content == null) {
+    throw envelopeError('relevance response envelope was incomplete');
+  }
+  const content = typeof message.content === 'string' ? message.content : String(message.content);
+  const usage = body.usage || {};
   const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0);
   const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0);
   const tokens = Number(usage.total_tokens ?? (promptTokens + completionTokens));
   return {
-    raw: content || '',
+    raw: content,
     promptTokens,
     completionTokens,
     tokens,
@@ -960,9 +1010,10 @@ async function cachePut(store, key, record) {
  * `cache` is a {@link RelevanceCache}, a filesystem path (memory plus that
  * JSON file), `true` or omitted (a fresh in-memory cache for this call), or
  * `null` / `false` (disabled). The cache key hashes the prompt version, model,
- * output-token limit, reasoning effort, task, path, and the body that was
- * sent (after truncation). Each path is classified on its own, including
- * paths whose contents match.
+ * output-token limit, the reasoning effort actually sent, task, path, mode,
+ * preview note, and the body that was sent. A cache read failure is a miss.
+ * A cache write failure is logged and the run continues. Each path is
+ * classified on its own, including paths whose contents match.
  *
  * Binary files and files over `maxBytes` / `maxTokens` are not sent in full.
  * `onBinary` and `onOversize` are `include` (keep, no model call), `exclude`
@@ -1031,7 +1082,8 @@ export async function filterRelevant(files, task, opts = {}) {
    * @typedef {object} PendingFile
    * @property {string} path
    * @property {string} body content sent to the model
-   * @property {string | null} note
+   * @property {string} note exact preview note, or ""
+   * @property {'full' | 'truncated' | 'binary'} mode
    * @property {'truncated' | null} skippedReason
    */
   /** @type {PendingFile[]} */
@@ -1060,14 +1112,21 @@ export async function filterRelevant(files, task, opts = {}) {
       continue;
     }
 
-    const binary = isBinaryContent(content);
-    const text = coerceText(content);
+    let binary = isBinaryContent(content);
+    /** @type {string} */
+    let text = '';
+    if (!binary) {
+      text = coerceText(content);
+      if (content instanceof Uint8Array && content.length > 0 && text === '') binary = true;
+    }
     if (binary) {
       if (onBinary === 'truncate') {
-        const nbytes = content instanceof Uint8Array ? content.length : utf8ByteLength(text);
+        const nbytes = content instanceof Uint8Array
+          ? content.length
+          : utf8ByteLength(typeof content === 'string' ? content : text);
         const note = 'Note: this file is binary. Its bytes are not shown; judge relevance from the path and this note.';
         const body = `[binary file, ${nbytes} bytes, contents omitted]`;
-        pending.push({ path, body, note, skippedReason: 'truncated' });
+        pending.push({ path, body, note, mode: 'binary', skippedReason: 'truncated' });
       } else {
         const decision = onBinary === 'include' ? 'yes' : 'no';
         const verb = decision === 'yes' ? 'included' : 'excluded';
@@ -1089,7 +1148,7 @@ export async function filterRelevant(files, task, opts = {}) {
           'Note: this file was truncated to fit the relevance check '
           + `(${nBytes} bytes, ${nTokens} tokens). Judge from the portion shown.`
         );
-        pending.push({ path, body, note, skippedReason: 'truncated' });
+        pending.push({ path, body, note, mode: 'truncated', skippedReason: 'truncated' });
       } else {
         const decision = onOversize === 'include' ? 'yes' : 'no';
         const verb = decision === 'yes' ? 'included' : 'excluded';
@@ -1105,7 +1164,7 @@ export async function filterRelevant(files, task, opts = {}) {
       continue;
     }
 
-    pending.push({ path, body: text, note: null, skippedReason: null });
+    pending.push({ path, body: text, note: '', mode: 'full', skippedReason: null });
   }
 
   if (store && typeof store.load === 'function') {
@@ -1130,6 +1189,8 @@ export async function filterRelevant(files, task, opts = {}) {
     }
   }
 
+  const configuredEffort = reasoningEffort || null;
+
   /**
    * Key for a lookup before the call, using the configured reasoning effort.
    * @param {PendingFile} item
@@ -1142,17 +1203,35 @@ export async function filterRelevant(files, task, opts = {}) {
       intent: task,
       path: item.path,
       content: item.body,
+      mode: item.mode,
+      note: item.note || '',
       maxOutputTokens,
       reasoningEffort: effort,
       promptVersion: FILTER_PROMPT_VERSION,
     });
   }
 
-  const configuredEffort = reasoningEffort || null;
+  /**
+   * The configured effort is tried first. A judgment stored after the
+   * provider rejected that parameter lives under the empty effort.
+   * @param {PendingFile} item
+   * @returns {Promise<{ hit: RelevanceCacheRecord, key: string } | null>}
+   */
+  async function loadReusable(item) {
+    const primaryKey = await keyFor(item, configuredEffort);
+    const primary = await readCache(primaryKey);
+    if (primary && reusableHit(primary)) return { hit: primary, key: primaryKey };
+    if (configuredEffort) {
+      const fallbackKey = await keyFor(item, null);
+      const fallback = await readCache(fallbackKey);
+      if (fallback && reusableHit(fallback)) return { hit: fallback, key: fallbackKey };
+    }
+    return null;
+  }
+
   let needsCall = false;
   for (const item of pending) {
-    const hit = await readCache(await keyFor(item, configuredEffort));
-    if (!reusableHit(hit)) {
+    if (!(await loadReusable(item))) {
       needsCall = true;
       break;
     }
@@ -1169,10 +1248,9 @@ export async function filterRelevant(files, task, opts = {}) {
    * @returns {Promise<void>}
    */
   async function runOne(item) {
-    const lookupKey = await keyFor(item, configuredEffort);
-    const hit = await readCache(lookupKey);
-    if (reusableHit(hit)) {
-      const decision = decisionFromRecord(item.path, { ...hit, cache_key: lookupKey }, true);
+    const cached = await loadReusable(item);
+    if (cached) {
+      const decision = decisionFromRecord(item.path, { ...cached.hit, cache_key: cached.key }, true);
       byPath.set(item.path, decision);
       emit(decision);
       return;
@@ -1212,6 +1290,9 @@ export async function filterRelevant(files, task, opts = {}) {
         break;
       } catch (err) {
         lastError = err;
+        if (err && typeof err === 'object' && /** @type {{ envelope?: boolean }} */ (err).envelope) {
+          break;
+        }
         if (!strippedEffort && effortUsed && isReasoningEffortRejected(err)) {
           effortUsed = null;
           strippedEffort = true;

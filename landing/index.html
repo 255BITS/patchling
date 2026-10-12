@@ -606,7 +606,7 @@ diff = generate_diff(env, task)
 updated = smartapply(diff, files)</pre>
     </div>
   </div>
-  <p class="lead" style="margin-top:1rem">Each decision is <code class="inline">{ path, decision, reason, raw, tokens, promptTokens, completionTokens, cached, skippedReason, error, failedOpen }</code>. <code class="inline">decision</code> is <code class="inline">yes</code> or <code class="inline">no</code>. A leading standalone yes or no is required; other wording fails open and is not cached. <code class="inline">skippedReason</code> is <code class="inline">binary</code>, <code class="inline">oversize</code>, <code class="inline">truncated</code>, <code class="inline">ignored</code>, or null. The default model is <code class="inline">xiaomi/mimo-v2.6-flash</code> (<code class="inline">GPTDIFF_FILTER_MODEL</code>). The cache key hashes prompt version 3, the model, the output-token limit, the reasoning effort, the task, the file path, and the body that was sent. Python uses the same fields in snake_case (<code class="inline">skipped_reason</code>, <code class="inline">prompt_tokens</code>, <code class="inline">failed_open</code>, <code class="inline">max_bytes</code>, <code class="inline">max_tokens</code>, <code class="inline">on_oversize</code>, <code class="inline">on_binary</code>). Reported Flask recall 1.0 and 0.8× token figures are UNVERIFIED.</p>
+  <p class="lead" style="margin-top:1rem">Each decision is <code class="inline">{ path, decision, reason, raw, tokens, promptTokens, completionTokens, cached, skippedReason, error, failedOpen }</code>. <code class="inline">decision</code> is <code class="inline">yes</code> or <code class="inline">no</code>. A leading standalone yes or no is required; other wording fails open and is not cached. <code class="inline">skippedReason</code> is <code class="inline">binary</code>, <code class="inline">oversize</code>, <code class="inline">truncated</code>, <code class="inline">ignored</code>, or null. The default model is <code class="inline">xiaomi/mimo-v2.6-flash</code> (<code class="inline">GPTDIFF_FILTER_MODEL</code>). The cache key hashes prompt version 3, the model, the output-token limit, the reasoning effort actually sent, the task, the file path, the mode (`full`, `truncated`, or `binary`), the preview note, and the body that was sent (`byteLength:utf8` for each field). Token estimates use `ceil(code points / 4)`. Python uses the same fields in snake_case (<code class="inline">skipped_reason</code>, <code class="inline">prompt_tokens</code>, <code class="inline">failed_open</code>, <code class="inline">max_bytes</code>, <code class="inline">max_tokens</code>, <code class="inline">on_oversize</code>, <code class="inline">on_binary</code>). Reported Flask recall 1.0 and 0.8× token figures are UNVERIFIED.</p>
 </section>
 
 <section id="why">
@@ -900,7 +900,7 @@ const SCENARIOS = {
       "main.py": 'from greet import greet\n\ndef main():\n    greet("World")\n',
       "math_utils.py": 'def add(a, b):\n    return a + b\n',
       "README.md": 'A tiny greeting program. The words live in greet.py.\n',
-      "assets/logo.bin": "\u0000PNG logo",
+      "assets/logo.bin": "\u0000PNG\u0000logo\u0000",
       "vendor/HISTORY.txt": "Internal release notes. Not part of the greeting.\n".repeat(12),
     },
     decisions: {
@@ -1352,10 +1352,56 @@ function resultMsg(text) {
   $("results").replaceChildren(p);
 }
 
+/* PLAYGROUND_HELPERS:START */
+let activeRun = 0;
+function beginRun() {
+  activeRun += 1;
+  return activeRun;
+}
+function isCurrentRun(runId) {
+  return runId === activeRun;
+}
+function classifierTokens(decisions) {
+  if (!decisions) return 0;
+  let total = 0;
+  for (const decision of decisions) total += Number(decision && decision.tokens) || 0;
+  return total;
+}
+function classifierCost(decisions, price) {
+  const list = Array.isArray(decisions) ? decisions : [];
+  let tokens = 0;
+  let prompt = 0;
+  let completion = 0;
+  let priced = true;
+  for (const decision of list) {
+    const total = Number(decision && decision.tokens) || 0;
+    tokens += total;
+    const hasSplit = !!(decision && (decision.promptTokens != null || decision.completionTokens != null));
+    if (total > 0 && !hasSplit) priced = false;
+    if (hasSplit) {
+      prompt += Number(decision.promptTokens) || 0;
+      completion += Number(decision.completionTokens) || 0;
+    }
+  }
+  let dollars = null;
+  if (priced && price && price.prompt != null && price.completion != null) {
+    dollars = (prompt * Number(price.prompt) + completion * Number(price.completion)) / 1000000;
+  }
+  return { tokens, dollars };
+}
+function formatClassifierCost(decisions, price) {
+  const cost = classifierCost(decisions, price);
+  const noun = cost.tokens === 1 ? "token" : "tokens";
+  let text = "classifier " + cost.tokens + " " + noun;
+  if (cost.dollars != null) text += " · $" + cost.dollars.toFixed(4);
+  return text;
+}
+/* PLAYGROUND_HELPERS:END */
+
 // The punchline, told only after it happened: which files git apply would
 // have bounced, and what smartapply did about it. Built from the actual run
 // outcome, so it's just as true in real mode as in the canned demo.
-function renderVerdict(perFile, inputFiles, updated, llmResolved) {
+function renderVerdict(perFile, inputFiles, updated, llmResolved, decisions) {
   const v = $("verdict");
   v.innerHTML = "";
   const repaired = [...llmResolved].filter((p) => p in updated);
@@ -1385,6 +1431,8 @@ function renderVerdict(perFile, inputFiles, updated, llmResolved) {
     line("ok", "✓ smartapply — " + okBits.join(" · "));
   }
 
+  if (decisions) line("ok", formatClassifierCost(decisions, priceOf(FILTER_MODEL)));
+
   if (mode === "demo" && SCENARIOS[scenarioKey].reveal) {
     const why = document.createElement("p");
     why.className = "vwhy";
@@ -1403,7 +1451,6 @@ function setBadge(card, cls, text, title) {
 
 /* ---------- the run ---------- */
 async function run() {
-  if (running) return;
   const scn = SCENARIOS[scenarioKey];
 
   // Demo mode replays a canned response, so it must run against the canned
@@ -1422,6 +1469,7 @@ async function run() {
 
   const goal = $("goal").value.trim();
   if (!goal) return;
+  const runId = beginRun();
   const inputFiles = { ...files };
 
   running = true;
@@ -1439,6 +1487,7 @@ async function run() {
 
   const diffPane = $("diffpane");
   const onDiffToken = (t) => {
+    if (!isCurrentRun(runId)) return;
     diffPane.textContent += t;
     diffPane.scrollTop = diffPane.scrollHeight;
   };
@@ -1449,15 +1498,11 @@ async function run() {
     if (filtering) {
       $("decisionwrap").style.display = "block";
       $("filtersrc").textContent = mode === "demo" ? "· pre-recorded decisions" : "· live, cheap model";
-      decisions = await collectDecisions(inputFiles, goal);
-      if (!decisions.some((d) => d.decision === "yes")) {
-        $("phase").textContent = "nothing relevant — diff skipped";
-        document.querySelector("#status .spin").style.display = "none";
-        resultMsg("No file was marked relevant, so generateDiff did not run.");
-        return;
-      }
+      decisions = await collectDecisions(inputFiles, goal, runId);
+      if (!isCurrentRun(runId)) return;
     }
 
+    if (!isCurrentRun(runId)) return;
     $("phase").textContent = "generating diff…";
     $("diffsrc").textContent = mode === "demo" ? "· pre-recorded reply, real engine" : "· live from NanoGPT";
     $("diffwrap").style.display = "block";
@@ -1466,10 +1511,12 @@ async function run() {
       : { apiKey: key, model: MODEL, onToken: onDiffToken };
 
     const diff = await generateDiff(buildEnvironment(filesForDiff(inputFiles, decisions)), goal, genOpts);
+    if (!isCurrentRun(runId)) return;
     renderDiff(diff);
 
     const perFile = parseDiffPerFile(diff);
     if (!diff.trim() || !perFile.length) {
+      if (!isCurrentRun(runId)) return;
       resultMsg("⚠ The model returned no applicable diff. Try rephrasing the goal.");
       $("phase").textContent = "no diff";
       document.querySelector("#status .spin").style.display = "none";
@@ -1490,6 +1537,7 @@ async function run() {
     // means the deterministic patcher handled them.
     const llmResolved = new Set();
     const onApplyToken = (t, path) => {
+      if (!isCurrentRun(runId)) return;
       llmResolved.add(path);
       const card = cards.get(path);
       if (!card) return;
@@ -1505,6 +1553,7 @@ async function run() {
       : { apiKey: key, model: APPLY_MODEL, onToken: onApplyToken };
 
     const updated = await smartapply(diff, inputFiles, applyOpts);
+    if (!isCurrentRun(runId)) return;
 
     for (const [path, card] of cards) {
       const pre = card.querySelector("pre");
@@ -1531,18 +1580,24 @@ async function run() {
     renderEditors();
     renderPreview();
 
-    renderVerdict(perFile, inputFiles, updated, llmResolved);
+    renderVerdict(perFile, inputFiles, updated, llmResolved, decisions);
 
-    $("phase").textContent = "done ✓ — the preview and files above are the new map";
+    const cost = decisions ? formatClassifierCost(decisions, priceOf(FILTER_MODEL)) : "";
+    $("phase").textContent = cost
+      ? "done ✓ — " + cost + " — the preview and files above are the new map"
+      : "done ✓ — the preview and files above are the new map";
     document.querySelector("#status .spin").style.display = "none";
     if (mode === "demo") $("upsell").style.display = "block";
   } catch (e) {
+    if (!isCurrentRun(runId)) return;
     $("phase").textContent = "error";
     document.querySelector("#status .spin").style.display = "none";
     resultMsg("Error: " + e.message);
   } finally {
-    running = false;
-    renderRun();
+    if (isCurrentRun(runId)) {
+      running = false;
+      renderRun();
+    }
   }
 }
 
@@ -1579,11 +1634,12 @@ function renderDecision(d) {
   $("decisionlist").appendChild(row);
 }
 
-async function collectDecisions(inputFiles, goal) {
+async function collectDecisions(inputFiles, goal, runId) {
   if (mode === "demo") {
     const canned = SCENARIOS[scenarioKey].decisions || {};
     const out = [];
     for (const path of Object.keys(inputFiles)) {
+      if (!isCurrentRun(runId)) return out;
       const src = canned[path] || {
         decision: "yes",
         reason: "included — this demo has no recorded decision for the file",
@@ -1615,7 +1671,7 @@ async function collectDecisions(inputFiles, goal) {
     maxTokens: scn.maxTokens,
     onOversize: scn.onOversize,
     onBinary: scn.onBinary,
-    onDecision: renderDecision,
+    onDecision: (d) => { if (isCurrentRun(runId)) renderDecision(d); },
   });
   return result.decisions;
 }

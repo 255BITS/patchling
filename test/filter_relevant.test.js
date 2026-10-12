@@ -109,6 +109,11 @@ test('parseRelevanceAnswer is malformed without a leading standalone yes or no',
   assert.equal(parseRelevanceAnswer('nope').decision, null);
   assert.equal(parseRelevanceAnswer('The answer is no.').decision, null);
   assert.equal(parseRelevanceAnswer('yes for the helper, no for the tests').decision, 'yes');
+  assert.equal(parseRelevanceAnswer('yes/no').decision, null);
+  assert.equal(parseRelevanceAnswer('yes-no').decision, null);
+  assert.equal(parseRelevanceAnswer('yes?').decision, null);
+  assert.equal(parseRelevanceAnswer('yes!').decision, 'yes');
+  assert.equal(parseRelevanceAnswer('no)').decision, 'no');
 });
 
 test('parseRelevanceAnswer: quoted yes/no is a decision', () => {
@@ -1107,4 +1112,179 @@ test('callLlm sends reasoning_effort only when the filter asks for it', async ()
   assert.equal(bodies[0].reasoning_effort, 'low');
   assert.equal(bodies[0].max_tokens, 1024);
   assert.equal('reasoning_effort' in bodies[1], false);
+});
+
+test('a full file and a preview truncated to the same bytes do not share a cache key', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    return response('yes');
+  });
+  const cache = new RelevanceCache();
+  const opts = { model: 'm', cache, apiKey: 'k', callLlm: mock.fn, maxTokens: null };
+  await filterRelevant({ 'a.txt': 'abc' }, 'edit', opts);
+  await filterRelevant({ 'a.txt': 'abcXXXX' }, 'edit', {
+    ...opts, maxBytes: 3, onOversize: 'truncate',
+  });
+  assert.equal(n, 2);
+  const full = await RelevanceCache.makeKey({
+    model: 'm', intent: 'edit', path: 'a.txt', content: 'abc', mode: 'full', note: '',
+  });
+  const truncated = await RelevanceCache.makeKey({
+    model: 'm', intent: 'edit', path: 'a.txt', content: 'abc', mode: 'truncated', note: 'x',
+  });
+  assert.notEqual(full, truncated);
+});
+
+test('a rejected reasoning_effort is cached under the empty effort', async () => {
+  const efforts = [];
+  let n = 0;
+  const wrapped = async (req) => {
+    n += 1;
+    efforts.push(req.reasoningEffort ?? null);
+    if (efforts.length === 1) {
+      const err = new Error('LLM request failed (400) from example: invalid reasoning_effort');
+      err.status = 400;
+      throw err;
+    }
+    return response('no');
+  };
+  const cache = new RelevanceCache();
+  const opts = { model: 'm', cache, apiKey: 'k', callLlm: wrapped, retryBaseMs: 0, retries: 0 };
+  const first = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', opts);
+  assert.deepEqual(efforts, ['low', null]);
+  assert.equal(first.decisions[0].decision, 'no');
+  assert.equal(first.decisions[0].cached, false);
+  const lowKey = await RelevanceCache.makeKey({
+    model: 'm', intent: 'task', path: 'a.py', content: 'v = 1\n',
+    reasoningEffort: 'low', mode: 'full', note: '',
+  });
+  const emptyKey = await RelevanceCache.makeKey({
+    model: 'm', intent: 'task', path: 'a.py', content: 'v = 1\n',
+    reasoningEffort: null, mode: 'full', note: '',
+  });
+  assert.equal(await cache.get(lowKey), undefined);
+  assert.ok(await cache.get(emptyKey));
+  const second = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', opts);
+  assert.equal(second.decisions[0].cached, true);
+  assert.equal(second.decisions[0].decision, 'no');
+  assert.equal(n, 2);
+});
+
+test('a TypeError is not retried and does not strip reasoning_effort', async () => {
+  const efforts = [];
+  const wrapped = async (req) => {
+    efforts.push(req.reasoningEffort ?? null);
+    throw new TypeError('choices is not iterable');
+  };
+  const result = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', {
+    ...baseOpts, callLlm: wrapped, retries: 2, retryBaseMs: 0,
+  });
+  assert.deepEqual(efforts, ['low']);
+  assert.equal(result.decisions[0].decision, 'yes');
+  assert.equal(result.decisions[0].failedOpen, true);
+  assert.equal(result.failedOpen, 1);
+});
+
+test('reasoning_effort is not retried when it was not sent', async () => {
+  let n = 0;
+  const wrapped = async () => {
+    n += 1;
+    const err = new Error('LLM request failed (400) from example: invalid reasoning_effort');
+    err.status = 400;
+    throw err;
+  };
+  const result = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', {
+    ...baseOpts, reasoningEffort: null, callLlm: wrapped, retries: 2, retryBaseMs: 0,
+  });
+  assert.equal(n, 1);
+  assert.equal(result.decisions[0].failedOpen, true);
+});
+
+test('a bad response envelope fails open, stays uncached, and does not abort other files', async () => {
+  let n = 0;
+  const wrapped = async (req) => {
+    n += 1;
+    const path = pathsOf(req)[0];
+    if (path === 'bad.py') return { usage: { total_tokens: 3 } };
+    if (path === 'empty-choices.py') return { choices: [] };
+    if (path === 'no-message.py') return { choices: [{}] };
+    if (path === 'no-content.py') return { choices: [{ message: {} }] };
+    if (path === 'json.py') throw new SyntaxError('Unexpected token');
+    return response('no');
+  };
+  const cache = new RelevanceCache();
+  const files = {
+    'bad.py': 'a\n',
+    'empty-choices.py': 'b\n',
+    'no-message.py': 'c\n',
+    'no-content.py': 'd\n',
+    'json.py': 'e\n',
+    'ok.py': 'f\n',
+  };
+  const result = await filterRelevant(files, 'task', {
+    ...baseOpts, cache, callLlm: wrapped, retries: 2, retryBaseMs: 0,
+  });
+  for (const path of ['bad.py', 'empty-choices.py', 'no-message.py', 'no-content.py', 'json.py']) {
+    const decision = result.decisions.find((item) => item.path === path);
+    assert.equal(decision.decision, 'yes', path);
+    assert.equal(decision.failedOpen, true, path);
+    assert.equal(decision.cached, false, path);
+    assert.equal(path in result.files, true, path);
+  }
+  assert.equal(result.decisions.find((item) => item.path === 'ok.py').decision, 'no');
+  assert.equal(n, 6);
+  const again = await filterRelevant({ 'bad.py': 'a\n' }, 'task', {
+    ...baseOpts, cache, callLlm: wrapped, retries: 2, retryBaseMs: 0,
+  });
+  assert.equal(again.decisions[0].cached, false);
+  assert.equal(n, 7);
+});
+
+test('valid UTF-8 bytes are decoded and a changed buffer is a separate call', async () => {
+  const seen = [];
+  let n = 0;
+  const mock = llm((req) => {
+    n += 1;
+    seen.push(bodyOf(req));
+    return response('yes');
+  });
+  const cache = new RelevanceCache();
+  const opts = { ...baseOpts, cache, callLlm: mock.fn };
+  const first = await filterRelevant({ 'a.py': new TextEncoder().encode('hello') }, 'task', opts);
+  assert.equal(first.files['a.py'], 'hello');
+  assert.equal(first.decisions[0].skippedReason, null);
+  assert.equal(seen[0], 'hello');
+  const second = await filterRelevant({ 'a.py': new TextEncoder().encode('hello!') }, 'task', opts);
+  assert.equal(second.files['a.py'], 'hello!');
+  assert.equal(n, 2);
+  const invalid = await filterRelevant({ 'a.py': Uint8Array.from([0xc3]) }, 'task', opts);
+  assert.equal(invalid.decisions[0].skippedReason, 'binary');
+  assert.equal(invalid.decisions[0].decision, 'no');
+  assert.equal(n, 2);
+  assert.equal('a.py' in invalid.files, false);
+});
+
+test('code-point truncation keeps a whole emoji, CJK run, and combining mark', async () => {
+  const seen = [];
+  const mock = llm((req) => {
+    seen.push(bodyOf(req));
+    return response('no');
+  });
+  const cases = [
+    ['abc😀def', 'abc😀'],
+    ['中文测试啊', '中文测试'],
+    ['e\u0301XYZ', 'e\u0301XY'],
+  ];
+  for (const [text, expected] of cases) {
+    await filterRelevant({ 'a.py': text }, 'task', {
+      ...baseOpts, maxBytes: null, maxTokens: 1, callLlm: mock.fn,
+    });
+    assert.equal(seen.at(-1), expected);
+    assert.equal(seen.at(-1).includes('\uFFFD'), false);
+  }
+  assert.equal(countTokens('abcde'), 2);
+  assert.equal(countTokens('abc😀def'), 2);
+  assert.equal(countTokens('中'), 1);
+  assert.equal(countTokens('e\u0301'), 1);
 });
