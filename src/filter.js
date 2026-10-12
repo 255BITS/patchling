@@ -88,7 +88,7 @@ const POLICIES = ['include', 'exclude', 'truncate'];
 
 const LEADING_WRAPPER = /^(?:answer|decision)\s*:\s*|^[\s"'`*_“”‘’]+/i;
 const TRAILING_WRAPPER = /[\s"'`*_“”‘’]+$/;
-const YES_NO_TOKEN = /^(yes|no)(?=$|\s|[.,!:;)])/i;
+const YES_NO_TOKEN = /^(yes|no)["'`*_“”‘’]*(?=$|\s|[.,!:;)])/i;
 const FENCE_LINE = /^```[a-zA-Z0-9_-]*\s*$/;
 
 const SYSTEM_PROMPT = (
@@ -123,7 +123,9 @@ const SYSTEM_PROMPT = (
 
 /**
  * @typedef {object} FilterRelevantResult
- * @property {Record<string, string>} files `yes` files in input order, original contents
+ * @property {Record<string, string | Uint8Array>} files `yes` files in input order.
+ *   Valid UTF-8 bytes are decoded to text, keeping a leading BOM. A binary
+ *   file kept by policy is the original value, bytes untouched.
  * @property {RelevanceDecision[]} decisions one per input file, in input order
  * @property {string} model
  * @property {RelevanceDecision[]} errors decisions whose call threw
@@ -401,10 +403,12 @@ function unwrapAnswerWrappers(text) {
  *
  * Think tags, one fenced block, and chain-of-thought reasoning are removed
  * first. Whitespace, quotes, markdown bold or backticks, and one `Answer:`
- * or `Decision:` prefix are wrappers. The first token must then be exactly
- * `yes` or `no`, and the next character must be the end of the string,
- * whitespace, or one of `. , ! : ; )`. Anything else is malformed (`null`);
- * callers include the file and do not cache it.
+ * or `Decision:` prefix are wrappers. Wrappers may sit on the decision word
+ * itself when a reason follows (`**no** unrelated`, `"no" unrelated`). The
+ * first token must then be exactly `yes` or `no`, and the next character
+ * must be the end of the string, whitespace, or one of `. , ! : ; )`.
+ * Anything else is malformed (`null`); callers include the file and do not
+ * cache it.
  *
  * @param {unknown} raw
  * @returns {{ decision: 'yes' | 'no' | null, cleaned: string }}
@@ -534,7 +538,7 @@ function truncateUtf8(text, maxBytes) {
     if (have < need) end = leadIndex;
     else end = leadIndex + need;
   }
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, end));
+  return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, end));
 }
 
 /**
@@ -545,38 +549,23 @@ function utf8ByteLength(text) {
   return new TextEncoder().encode(text).length;
 }
 
+/** A binary probe may end inside one UTF-8 character. The rest of the file is still checked. */
+const UTF8_PROBE_BYTES = 8192;
+
 /**
- * True when `content` looks like a binary file (NUL or a dense run of
- * non-text controls). Non-text values other than byte arrays are not binary;
- * {@link filterRelevant} rejects them when it coerces the file.
+ * True when `content` looks like a binary file (NUL, invalid UTF-8, or a
+ * dense run of non-text controls). The whole payload is validated. An
+ * incomplete trailing sequence is tolerated only when it ends on the
+ * 8192-byte probe boundary. Non-text values other than byte arrays are not
+ * binary; {@link filterRelevant} rejects them when it coerces the file.
  * @param {unknown} content
  * @returns {boolean}
  */
 export function isBinaryContent(content) {
   if (content instanceof Uint8Array) return binaryBytes(content);
   if (typeof content !== 'string') return false;
-  return binaryBytes(utf8Prefix(content, 8192));
-}
-
-/**
- * First `maxBytes` UTF-8 bytes of `text`, which may end on an incomplete
- * code point when the next character does not fit.
- * @param {string} text
- * @param {number} maxBytes
- * @returns {Uint8Array}
- */
-function utf8Prefix(text, maxBytes) {
-  const encoder = new TextEncoder();
-  /** @type {number[]} */
-  const out = [];
-  let n = 0;
-  for (const ch of text) {
-    if (n >= maxBytes) break;
-    const bytes = encoder.encode(ch);
-    for (const byte of bytes) out.push(byte);
-    n += bytes.length;
-  }
-  return Uint8Array.from(out).subarray(0, maxBytes);
+  if (content.includes('\0')) return true;
+  return textLooksBinary(content);
 }
 
 /**
@@ -598,7 +587,7 @@ function utf8SequenceLength(lead) {
  * @returns {string | null}
  */
 function decodeUtf8AllowingShortTail(sample) {
-  const fatal = () => new TextDecoder('utf-8', { fatal: true });
+  const fatal = () => new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
   try {
     return fatal().decode(sample);
   } catch {
@@ -625,14 +614,45 @@ function decodeUtf8AllowingShortTail(sample) {
  * @param {Uint8Array} bytes
  * @returns {boolean}
  */
-function binaryBytes(bytes) {
-  const sample = bytes.subarray(0, 8192);
-  for (let i = 0; i < sample.length; i++) {
-    if (sample[i] === 0) return true;
+/**
+ * Decode `bytes` as UTF-8, preserving a leading BOM (U+FEFF).
+ * Returns null when the buffer is not valid UTF-8.
+ * @param {Uint8Array} bytes
+ * @returns {string | null}
+ */
+function decodeStrictUtf8(bytes) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    return null;
   }
-  const text = decodeUtf8AllowingShortTail(sample);
+}
+
+/**
+ * Text for a valid UTF-8 payload. A buffer of exactly {@link UTF8_PROBE_BYTES}
+ * may end on an incomplete sequence; that prefix is text. Any other invalid
+ * byte, including one past the probe, is binary (`null`).
+ * @param {Uint8Array} bytes
+ * @returns {string | null}
+ */
+function decodeTextBytes(bytes) {
+  const text = decodeStrictUtf8(bytes);
+  if (text != null) return text;
+  if (bytes.length !== UTF8_PROBE_BYTES) return null;
+  return decodeUtf8AllowingShortTail(bytes);
+}
+
+/**
+ * @param {Uint8Array} bytes
+ * @returns {boolean}
+ */
+function binaryBytes(bytes) {
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 0) return true;
+  }
+  const text = decodeTextBytes(bytes);
   if (text == null) return true;
-  if (sample.length > 0 && text === '') return true;
+  if (bytes.length > 0 && text === '') return true;
   return textLooksBinary(text);
 }
 
@@ -658,9 +678,9 @@ function textLooksBinary(sample) {
 function coerceText(content) {
   if (typeof content === 'string') return content;
   if (content instanceof Uint8Array) {
-    const text = decodeUtf8AllowingShortTail(content);
+    const text = decodeTextBytes(content);
     if (text != null) return text;
-    return new TextDecoder('utf-8', { fatal: false }).decode(content);
+    throw new TypeError('file content must be valid UTF-8 bytes');
   }
   const name = content === null ? 'null' : typeof content;
   throw new TypeError(`file content must be str or bytes, got ${name}`);
@@ -782,10 +802,10 @@ function usageAndText(response) {
     throw envelopeError('relevance response envelope was incomplete');
   }
   const message = /** @type {{ message?: { content?: unknown } }} */ (body.choices[0]).message;
-  if (!message || message.content == null) {
+  if (!message || typeof message.content !== 'string') {
     throw envelopeError('relevance response envelope was incomplete');
   }
-  const content = typeof message.content === 'string' ? message.content : String(message.content);
+  const content = message.content;
   const usage = body.usage || {};
   const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0);
   const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0);
@@ -1400,11 +1420,14 @@ export async function filterRelevant(files, task, opts = {}) {
 
   /** @type {RelevanceDecision[]} */
   const decisions = entries.map(([path]) => byPath.get(path));
-  /** @type {Record<string, string>} */
+  /** @type {Record<string, string | Uint8Array>} */
   const included = {};
   for (const [path, content] of entries) {
-    if (byPath.get(path).decision === 'yes') {
-      included[path] = typeof content === 'string' ? content : coerceText(content);
+    if (byPath.get(path).decision !== 'yes') continue;
+    if (content instanceof Uint8Array && isBinaryContent(content)) {
+      included[path] = content;
+    } else {
+      included[path] = coerceText(content);
     }
   }
   const errors = decisions.filter((decision) => decision.error);

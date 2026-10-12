@@ -21,7 +21,7 @@ const fixturePath = fileURLToPath(new URL('./fixtures/parity/relevance.json', im
 const fixtureBytes = readFileSync(fixturePath);
 const fixture = JSON.parse(fixtureBytes.toString('utf8'));
 
-const FIXTURE_SHA256 = '90b7299375518fbc6cb9bfeacb536f46f95c17ed72f8f66d063592bfdaec4665';
+const FIXTURE_SHA256 = '6976ad71714be0138a6043d9bdeb724abe34a65515f8389913dca10a0c48c4f2';
 
 function lengthPrefixed(parts) {
   const chunks = [];
@@ -171,6 +171,48 @@ test('parity fixture: binary detection tolerates only a short trailing sequence'
     bytes.set(row.tail, row.pad);
     assert.equal(isBinaryContent(bytes), row.binary, row.name);
   }
+  const late = fixture.binary.cases.find((row) => row.name === '8192 ASCII + 0xff + TAIL');
+  assert.ok(late);
+  assert.equal(late.binary, true);
+});
+
+test('parity fixture: a leading UTF-8 BOM is preserved', async () => {
+  assert.equal(countTokens(fixture.bom.text), fixture.bom.tokens);
+  assert.equal(fixture.bom.text.charCodeAt(0), 0xfeff);
+  assert.equal(fixture.bom.truncated, '\uFEFFhel');
+  const bytes = Uint8Array.from(fixture.bom.bytes);
+  let body = '';
+  const result = await filterRelevant({ 'bom.txt': bytes }, 'edit', {
+    model: 'm',
+    cache: false,
+    apiKey: 'k',
+    maxBytes: null,
+    maxTokens: null,
+    callLlm: async (req) => {
+      body = req.messages[1].content;
+      return { choices: [{ message: { content: 'yes' } }], usage: {} };
+    },
+  });
+  assert.equal(result.files['bom.txt'], fixture.bom.text);
+  assert.equal(result.files['bom.txt'].charCodeAt(0), 0xfeff);
+  assert.match(body, new RegExp(fixture.bom.text));
+  const truncated = await filterRelevant({ 'bom.txt': fixture.bom.text }, 'edit', {
+    model: 'm',
+    cache: false,
+    apiKey: 'k',
+    maxBytes: null,
+    maxTokens: fixture.bom.maxTokens,
+    onOversize: 'truncate',
+    callLlm: async (req) => {
+      body = req.messages[1].content.split('File contents:\n')[1]
+        .replace(/\n\nIs this file relevant to the task\? yes\/no$/, '');
+      return { choices: [{ message: { content: 'no' } }], usage: {} };
+    },
+  });
+  assert.equal(body, fixture.bom.truncated);
+  assert.equal(truncated.decisions[0].skippedReason, 'truncated');
+  const vector = fixture.cacheKey.vectors.find((row) => row.path === 'bom.txt');
+  assert.equal(vector.content, fixture.bom.text);
 });
 
 test('parity fixture: valid UTF-8 bytes stay text and changed bytes miss the cache', async () => {
