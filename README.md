@@ -64,6 +64,7 @@ Configuration comes from environment variables (Node) or `setEnv(...)` overrides
 | `GPTDIFF_LLM_API_KEY` | NanoGPT API key (`sk-nano-…`) | — (required for live calls) |
 | `GPTDIFF_LLM_BASE_URL` | OpenAI-compatible base URL | `https://nano-gpt.com/api/v1/` |
 | `GPTDIFF_MODEL` | Model id | `xiaomi/mimo-v2.5-pro-ultraspeed` |
+| `GPTDIFF_FILTER_MODEL` | Cheap model for `filterRelevant` | `xiaomi/mimo-v2.5-pro-ultraspeed` |
 
 ```js
 import { setEnv } from 'patchling';
@@ -101,6 +102,39 @@ Builds the prompt, calls the LLM, and returns the unified diff extracted from th
 - `opts.callLlm` — inject a custom/mock completion client (used heavily in tests).
 - `opts.onUsage` — optional callback invoked with `{ promptTokens, completionTokens, totalTokens }` after the LLM call completes, so callers can surface cost/usage without changing the `Promise<string>` return type.
 
+### `filterRelevant(files, task, opts?) → Promise<Decision[]>`
+Opt-in pass for a large file map. Each candidate file is sent, in full, with the task to a cheap model that answers `is this file relevant to the task? yes/no`. Only `yes` files should be handed to `generateDiff`. `smartapply` still takes the full map, so files the diff never mentions are left as they were.
+
+```js
+import { filterRelevant, buildEnvironment, generateDiff, smartapply } from 'patchling';
+
+const decisions = await filterRelevant(files, task, {
+  model: 'xiaomi/mimo-v2.5-pro-ultraspeed', // GPTDIFF_FILTER_MODEL, else this cheap default
+  concurrency: 8,                           // max in-flight calls
+  // cache: null,                           // default is an in-memory cache
+  // maxBytes: 262144,                      // skip larger files; null disables
+  onDecision(d) { console.log(d.path, d.decision); },
+});
+const diff = await generateDiff(buildEnvironment(files, { decisions }), task, { model });
+const next = await smartapply(diff, files);
+```
+
+- `opts.model`, `opts.apiKey`, `opts.baseUrl` — same key and base URL resolution as `generateDiff` (`GPTDIFF_LLM_API_KEY`, `GPTDIFF_LLM_BASE_URL`).
+- `opts.concurrency` — at most this many classifications in flight (default 8).
+- `opts.cache` — `get(key)` / `set(key, value)`, sync or async. The key is `model`, SHA-256 of the task, and SHA-256 of the contents, separated by NUL. Omit it for a process-wide in-memory cache (`createMemoryCache()` builds another). `null` turns caching off. Definitive yes/no answers are stored; errors and ambiguous answers are not.
+- `opts.maxBytes` — UTF-8 size cap (default 262144). Larger files, and files that look binary (a NUL, or a dense run of control bytes), are not sent.
+- `opts.onDecision` — called as each file finishes, in completion order. The returned array stays in input order.
+- `opts.callLlm` — inject a mock client.
+
+Each decision is `{ path, decision, raw, tokens, cached, skippedReason, error, reason }`.
+
+- `decision` is `"yes"`, `"no"`, or `"skip"`.
+- `skippedReason` is `"binary"`, `"too-large"`, or `null`.
+- Ambiguous text (after `<think>` blocks are stripped) and a thrown call become `"yes"` with `error` set, so a bad answer cannot drop a file. `error` is `"ambiguous answer"` or the thrown message.
+- `buildEnvironment(files, { decisions })` keeps only `"yes"` paths. Passing the decisions array itself does the same. With no second argument, every file is included.
+
+Python (`filter_relevant` in [patchling-py](https://github.com/255BITS/patchling-py)) takes the same arguments in snake_case: `max_bytes`, `on_decision`, and `skipped_reason` on each decision. `build_environment(files, decisions=decisions)` keeps the `"yes"` files.
+
 ### `smartapply(diffText, files, opts?) → Promise<{ path: content }>`
 Applies a diff to an in-memory file map with per-file, LLM-assisted conflict resolution (runs files concurrently). Handles creation, modification, and deletion; `<think>…</think>` and reasoning preambles are stripped automatically. Returns a **new** map; deleted files are omitted.
 
@@ -112,7 +146,7 @@ Applies a diff to an in-memory file map with per-file, LLM-assisted conflict res
 Deterministic, no-LLM patch application (the strict "basic" applier). `changed` is `true` iff something was created, modified, or deleted; `files` is the updated map (equal to the input on failure — no partial writes).
 
 ### Other exports
-`parseDiffPerFile`, `buildEnvironment`, `colorCodeDiff`, `swallowReasoning`, `stripBadOutput`, `extractDiffBlocks`, `callLlm`, `resolveApiKey`, `resolveBaseUrl`, `getEnv`, `setEnv`, and the `oauth` namespace.
+`parseDiffPerFile`, `buildEnvironment`, `filterRelevant`, `createMemoryCache`, `parseRelevanceAnswer`, `colorCodeDiff`, `swallowReasoning`, `stripBadOutput`, `extractDiffBlocks`, `callLlm`, `resolveApiKey`, `resolveBaseUrl`, `getEnv`, `setEnv`, and the `oauth` namespace.
 
 ## Differences from the Python package
 

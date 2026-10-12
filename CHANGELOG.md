@@ -18,6 +18,7 @@ Not tagged and not published. `package.json` is `0.2.1`; the only release tag an
 
 ### API
 
+- `filterRelevant(files, task, opts)` asks a cheap model, per file, whether that file is relevant to the task. Bounded concurrency, a pluggable cache keyed by model + task hash + content hash (in-memory by default), and a skip for binary and oversized files. Ambiguous answers and errors include the file and are reported on the decision. `buildEnvironment(files, { decisions })` keeps only the `yes` files for `generateDiff`.
 - Renamed the package from `gptdiff-js` to `patchling` (npm name `patchling`; an intermediate publish used `gptdiff`).
 - `generateDiff` and `smartapply` stream tokens through `opts.onToken`. `generateDiff` reports token usage through `opts.onUsage`.
 - Ship JSDoc-generated `.d.ts` files, with `types` conditions on the package exports.
@@ -26,6 +27,7 @@ Not tagged and not published. `package.json` is `0.2.1`; the only release tag an
 ### Site
 
 - `patchling.app` landing page: in-browser playground (canned demo and live NanoGPT), model picker, and Open Graph card.
+- The playground can run `filterRelevant` before the diff: a toggle, a decision-model picker, and a per-file yes/no view (reasons, tokens, skips). Bundled sample projects exercise it without leaving the page.
 - README links that 404'd after the repo rename now point at patchling.app and the Python package.
 
 ### CI

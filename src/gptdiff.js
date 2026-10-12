@@ -48,13 +48,44 @@ const APPLY_SYSTEM_PROMPT = `Please apply the diff to this file. Return the full
 5. You must return the entire file. It overwrites the existing file.`;
 
 /**
+ * Decisions from `filterRelevant`, or a bare array of them.
+ * `null` means "include every file" (the default).
+ * @param {object | Array<{ path?: string, decision?: string }> | undefined} opts
+ * @returns {Array<{ path?: string, decision?: string }> | null}
+ */
+function decisionsFrom(opts) {
+  if (!opts) return null;
+  if (Array.isArray(opts)) return opts;
+  if (Array.isArray(opts.decisions)) return opts.decisions;
+  return null;
+}
+
+/**
  * Rebuild the environment string from a `{ path: content }` map.
+ *
+ * Opt-in relevance filter: pass `{ decisions }` from `filterRelevant` and
+ * only files whose decision is `"yes"` are included. An array of those
+ * decisions is also accepted as the second argument. Omit it and every file
+ * is included, in insertion order. Skipped and `"no"` files stay out of the
+ * string that `generateDiff` sees.
+ *
  * @param {Record<string, string>} filesDict
+ * @param {{ decisions?: Array<{ path?: string, decision?: string }> } | Array<{ path?: string, decision?: string }>} [opts]
+ *   `{ decisions }` from `filterRelevant`, or that array itself.
  * @returns {string}
  */
-export function buildEnvironment(filesDict) {
+export function buildEnvironment(filesDict, opts) {
+  let entries = Object.entries(filesDict || {});
+  const decisions = decisionsFrom(opts);
+  if (decisions) {
+    const yes = new Set();
+    for (const decision of decisions) {
+      if (decision && decision.decision === 'yes' && decision.path) yes.add(decision.path);
+    }
+    entries = entries.filter(([path]) => yes.has(path));
+  }
   const env = [];
-  for (const [path, content] of Object.entries(filesDict)) {
+  for (const [path, content] of entries) {
     env.push(`File: ${path}`);
     env.push('Content:');
     env.push(content);

@@ -1,5 +1,9 @@
 export * as oauth from "./oauth.js";
+export type RelevanceDecision = import("./filter.js").RelevanceDecision;
+export type RelevanceCache = import("./filter.js").RelevanceCache;
+export type RelevanceCacheEntry = import("./filter.js").RelevanceCacheEntry;
 export { generateDiff, smartapply, buildEnvironment, callLlmForDiff, callLlmForApply, callLlmForApplyWithThink } from "./gptdiff.js";
+export { filterRelevant, createMemoryCache, parseRelevanceAnswer, DEFAULT_FILTER_MODEL, DEFAULT_FILTER_MAX_BYTES, DEFAULT_FILTER_CONCURRENCY } from "./filter.js";
 export { parseDiffPerFile, applyDiff, applyPatchToFile } from "./applydiff.js";
 export { colorCodeDiff, swallowReasoning, stripBadOutput, extractDiffBlocks, stripThinkTags } from "./text.js";
 export { callLlm, resolveApiKey, resolveBaseUrl } from "./llm.js";
