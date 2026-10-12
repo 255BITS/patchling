@@ -6,10 +6,11 @@ export function createMemoryCache(): RelevanceCache;
 /**
  * Parse a yes/no relevance answer.
  *
- * Think tags and chain-of-thought reasoning blocks are removed before the
- * answer is read, so a "no" inside a think tag cannot override a final "yes".
- * A single consistent yes or no wins, including "Answer: yes" and a fenced
- * "NO". Both words, or neither, is ambiguous — callers include the file.
+ * Think tags and chain-of-thought reasoning blocks are removed first. The
+ * decision is a leading standalone `yes` or `no` after whitespace, quotes,
+ * markdown bold or backticks, and an `Answer:` or `Decision:` prefix. A word
+ * later in the sentence does not count. Anything else is malformed (`null`);
+ * callers include the file and do not cache it.
  *
  * @param {unknown} raw
  * @returns {{ decision: 'yes' | 'no' | null, cleaned: string }}
@@ -49,8 +50,10 @@ export function isIgnoredPath(filePath: string, patterns?: string[]): boolean;
  *
  * `cache` is a {@link RelevanceCache}, a filesystem path (memory plus that
  * JSON file), `true` or omitted (a fresh in-memory cache for this call), or
- * `null` / `false` (disabled). The cache key is the model, a hash of the task,
- * a hash of the original file contents, and a truncation variant.
+ * `null` / `false` (disabled). The cache key hashes the prompt version, model,
+ * output-token limit, reasoning effort, task, path, and the body that was
+ * sent (after truncation). Each path is classified on its own, including
+ * paths whose contents match.
  *
  * Binary files and files over `maxBytes` / `maxTokens` are not sent in full.
  * `onBinary` and `onOversize` are `include` (keep, no model call), `exclude`
@@ -70,7 +73,7 @@ export function isIgnoredPath(filePath: string, patterns?: string[]): boolean;
  * @param {'include' | 'exclude' | 'truncate'} [opts.onBinary] default `exclude`
  * @param {number} [opts.maxOutputTokens] completion cap (default {@link DEFAULT_FILTER_MAX_OUTPUT_TOKENS})
  * @param {string | null} [opts.reasoningEffort] default {@link DEFAULT_FILTER_REASONING_EFFORT}; `null` omits it
- * @param {number} [opts.retries] extra attempts after a timeout or HTTP 5xx (default 2)
+ * @param {number} [opts.retries] extra attempts after a timeout, HTTP 5xx, or a billing-reservation error (default 2). A 4xx that names `reasoning_effort` is retried once without that parameter and does not consume one of these attempts.
  * @param {number} [opts.retryBaseMs] backoff base in ms (default 200, doubles, capped at 30s)
  * @param {boolean | string[] | null} [opts.ignore] lockfile and generated-file patterns.
  *   `true` or omitted uses {@link DEFAULT_IGNORE_PATTERNS}. `false` or `null` classifies every path.
@@ -135,10 +138,12 @@ export const DEFAULT_FILTER_MAX_OUTPUT_TOKENS: 1024;
 /** Sent on the filter call so reasoning models keep the yes/no inside the budget. */
 export const DEFAULT_FILTER_REASONING_EFFORT: "low";
 /**
- * Bumped when the system prompt changes, and included in the cache key so an
- * old judgment is not reused for a new prompt.
+ * Bumped when the prompt or the yes/no contract changes so an old judgment is
+ * not reused. The cache key stringifies this value. `PROMPT_VERSION` is the
+ * shared name; `FILTER_PROMPT_VERSION` is the same number.
  */
-export const FILTER_PROMPT_VERSION: 1;
+export const PROMPT_VERSION: 3;
+export const FILTER_PROMPT_VERSION: 3;
 /**
  * Lockfiles and generated paths skipped unless `ignore` is `false` or a custom list.
  * Patterns are case-insensitive globs (`**` crosses directories, `*` does not).
@@ -157,7 +162,11 @@ export const DEFAULT_IGNORE_PATTERNS: string[];
  * @property {boolean} cached true when this judgment was reused (a cache hit, or a later path in a shared request)
  * @property {'binary' | 'oversize' | 'truncated' | 'ignored' | null} skippedReason
  *   set when the file was not sent in full. `ignored` is a lockfile or generated path.
- * @property {string | null} error set when the call threw; the file is still included
+ * @property {string | null} error set when the call threw or the answer was empty;
+ *   the file is still included
+ * @property {boolean} failedOpen true when the file was included without a
+ *   definitive yes/no (empty, malformed, thrown, or a cache failure that
+ *   blocked a decision)
  */
 /**
  * @typedef {object} FilterRelevantResult
@@ -182,27 +191,42 @@ export const DEFAULT_IGNORE_PATTERNS: string[];
  * @property {number} [completion_tokens]
  * @property {'binary' | 'oversize' | 'truncated' | null} [skipped_reason]
  * @property {string | null} [error]
+ * @property {boolean} [failed_open]
  * @property {string} [cache_key]
  */
 /**
  * In-memory relevance cache with an optional on-disk JSON file.
  *
- * Keys are `model`, SHA-256 of the task, SHA-256 of the original contents, and
- * a variant tag (`full`, `binary-preview`, or `truncated:<maxTokens>:<maxBytes>`),
- * separated by newlines. A judgment on a truncated body is not reused as a
- * full-content judgment.
+ * The key is the SHA-256 of the exact classification inputs, length-prefixed
+ * in this order: prompt version, model, output-token limit, reasoning effort,
+ * intent, file path, and the content actually sent (after truncation). Two
+ * paths never share a key, even when their contents match.
  */
 export class RelevanceCache {
     /**
-     * @param {string} model
-     * @param {string} task
-     * @param {string} content original file text
-     * @param {string} [variant]
-     * @param {number} [maxOutputTokens] completion cap, so a larger budget is a different key
-     * @param {number} [promptVersion] {@link FILTER_PROMPT_VERSION}
+     * SHA-256 hex of the length-prefixed classification inputs.
+     * Each field is its UTF-8 bytes, written as `byteLength`, a newline, the
+     * bytes, and a newline. Field order: prompt version, model, output-token
+     * limit, reasoning effort (`""` when omitted), intent, path, content.
+     * @param {object} fields
+     * @param {string} fields.model
+     * @param {string} fields.intent task text
+     * @param {string} fields.path
+     * @param {string} fields.content body sent to the model, after truncation
+     * @param {number} [fields.maxOutputTokens]
+     * @param {string | null} [fields.reasoningEffort]
+     * @param {number | string} [fields.promptVersion]
      * @returns {Promise<string>}
      */
-    static makeKey(model: string, task: string, content: string, variant?: string, maxOutputTokens?: number, promptVersion?: number): Promise<string>;
+    static makeKey(fields: {
+        model: string;
+        intent: string;
+        path: string;
+        content: string;
+        maxOutputTokens?: number;
+        reasoningEffort?: string | null;
+        promptVersion?: number | string;
+    }): Promise<string>;
     /**
      * @param {string} [path] JSON file. Omit for memory only.
      *   Loaded on the first read. Corrupt files are ignored.
@@ -268,9 +292,16 @@ export type RelevanceDecision = {
      */
     skippedReason: "binary" | "oversize" | "truncated" | "ignored" | null;
     /**
-     * set when the call threw; the file is still included
+     * set when the call threw or the answer was empty;
+     * the file is still included
      */
     error: string | null;
+    /**
+     * true when the file was included without a
+     * definitive yes/no (empty, malformed, thrown, or a cache failure that
+     * blocked a decision)
+     */
+    failedOpen: boolean;
 };
 export type FilterRelevantResult = {
     /**
@@ -310,5 +341,6 @@ export type RelevanceCacheRecord = {
     completion_tokens?: number;
     skipped_reason?: "binary" | "oversize" | "truncated" | null;
     error?: string | null;
+    failed_open?: boolean;
     cache_key?: string;
 };

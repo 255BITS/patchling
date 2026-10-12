@@ -1,0 +1,149 @@
+{
+  "promptVersion": 3,
+  "maxOutputTokens": 1024,
+  "reasoningEffort": "low",
+  "tokenEstimate": {
+    "rule": "characters/4",
+    "empty": 0,
+    "minimumNonEmpty": 1,
+    "examples": [
+      { "text": "", "tokens": 0 },
+      { "text": "abcd", "tokens": 1 },
+      { "text": "abcde", "tokens": 1 },
+      { "text": "abcdefgh", "tokens": 2 }
+    ]
+  },
+  "systemPrompt": "You are a relevance filter for a code-editing task. Decide whether the given file must be read or edited to accomplish the task, or is necessary context for that edit. Reply with a single line that starts with exactly \"yes\" or exactly \"no\", followed by a short reason. Answer \"yes\" when the file is likely to need changes or is required context. Answer \"no\" when it is unrelated. Do not write a diff.",
+  "userPrompt": {
+    "withoutNote": "Task:\n{intent}\n\nFile path:\n{path}\n\nFile contents:\n{content}\n\nIs this file relevant to the task? yes/no",
+    "withNote": "Task:\n{intent}\n\nFile path:\n{path}\n\n{note}\n\nFile contents:\n{content}\n\nIs this file relevant to the task? yes/no"
+  },
+  "cacheKey": {
+    "algorithm": "sha256-hex of length-prefixed utf-8 fields",
+    "fields": ["promptVersion", "model", "tokenLimit", "effort", "intent", "path", "content"],
+    "encoding": "For each field, write the decimal UTF-8 byte length, a newline, the UTF-8 bytes, and a newline. promptVersion and tokenLimit are decimal strings. effort is the reasoning-effort string, or empty when the parameter is omitted. content is the body sent to the model after truncation, not the original file. Different paths never share a key.",
+    "vectors": [
+      {
+        "promptVersion": "3",
+        "model": "m",
+        "tokenLimit": "1024",
+        "effort": "low",
+        "intent": "edit the target",
+        "path": "src/target.py",
+        "content": "",
+        "sha256": "beef6d830371f183c68a46946633626a112d45fd6461ecddec666fc1d129af4a"
+      },
+      {
+        "promptVersion": "3",
+        "model": "m",
+        "tokenLimit": "1024",
+        "effort": "low",
+        "intent": "edit the target",
+        "path": "unrelated.py",
+        "content": "",
+        "sha256": "7f10396aa96a1ac4e70209d7f8415efe532c3629a2c7f6ad19fb3f5237138046"
+      },
+      {
+        "promptVersion": "3",
+        "model": "m",
+        "tokenLimit": "128",
+        "effort": "low",
+        "intent": "task",
+        "path": "a.py",
+        "content": "v = 1\n",
+        "sha256": "6dcec468a48967b4d50a063a3435f7e481c8db85e7cd4cb87828a7a80e3f3285"
+      },
+      {
+        "promptVersion": "3",
+        "model": "m",
+        "tokenLimit": "1024",
+        "effort": "",
+        "intent": "task",
+        "path": "a.py",
+        "content": "é",
+        "sha256": "6f0021af86e723832cfb176d7fc140208b0d2c5d39b31b9f5a74003668972fdf"
+      }
+    ]
+  },
+  "parser": [
+    { "raw": "yes", "decision": "yes" },
+    { "raw": "Yes.", "decision": "yes" },
+    { "raw": "NO\nthis file is a changelog", "decision": "no" },
+    { "raw": "Answer: yes, the parser lives here", "decision": "yes" },
+    { "raw": "Decision: no", "decision": "no" },
+    { "raw": "\"yes\"", "decision": "yes" },
+    { "raw": "'no'", "decision": "no" },
+    { "raw": "**yes**", "decision": "yes" },
+    { "raw": "`no`", "decision": "no" },
+    { "raw": "Answer: **yes**", "decision": "yes" },
+    { "raw": "<think>no, this file is irrelevant</think>\nyes, the function to rename is here", "decision": "yes" },
+    { "raw": "There is no doubt this file is required", "decision": null },
+    { "raw": "The answer is no.", "decision": null },
+    { "raw": "The file defines helpers used by the task", "decision": null },
+    { "raw": "I would say no because it is unrelated", "decision": null },
+    { "raw": "nope", "decision": null },
+    { "raw": "", "decision": null },
+    { "raw": "yes for the helper, no for the tests", "decision": "yes" }
+  ],
+  "malformedIsFailedOpen": true,
+  "truncation": [
+    { "text": "éX", "maxBytes": 2, "expected": "é" },
+    { "text": "€X", "maxBytes": 2, "expected": "" },
+    { "text": "😀X", "maxBytes": 3, "expected": "" },
+    { "text": "a€b", "maxBytes": 4, "expected": "a€" }
+  ],
+  "binary": {
+    "sampleBytes": 8192,
+    "rule": "Decode the first 8192 bytes as UTF-8. Tolerate only an incomplete trailing sequence of at most 3 bytes. A NUL or any other invalid byte is binary.",
+    "cases": [
+      { "name": "2-byte cut", "pad": 8191, "tail": [195], "binary": false },
+      { "name": "3-byte cut", "pad": 8190, "tail": [226, 130], "binary": false },
+      { "name": "4-byte cut", "pad": 8189, "tail": [240, 159, 152], "binary": false },
+      { "name": "invalid lead", "pad": 8191, "tail": [255], "binary": true },
+      { "name": "nul", "pad": 0, "tail": [104, 105, 0], "binary": true }
+    ]
+  },
+  "ignore": {
+    "caseSensitive": false,
+    "glob": "** crosses directories, * does not. Matching is on the normalized relative path.",
+    "patterns": [
+      "**/package-lock.json",
+      "**/yarn.lock",
+      "**/pnpm-lock.yaml",
+      "**/bun.lock",
+      "**/bun.lockb",
+      "**/npm-shrinkwrap.json",
+      "**/Cargo.lock",
+      "**/Gemfile.lock",
+      "**/poetry.lock",
+      "**/Pipfile.lock",
+      "**/composer.lock",
+      "**/go.sum",
+      "**/uv.lock",
+      "**/pdm.lock",
+      "**/flake.lock",
+      "**/pubspec.lock",
+      "**/packages.lock.json",
+      "**/Package.resolved",
+      "**/*.min.js",
+      "**/*.min.mjs",
+      "**/*.min.css",
+      "**/*.map",
+      "**/dist/**",
+      "**/build/**",
+      "**/.next/**",
+      "**/coverage/**",
+      "**/__pycache__/**",
+      "**/*.pyc",
+      "**/*.pyo",
+      "**/*.generated.*"
+    ],
+    "examples": [
+      { "path": "package-lock.json", "ignored": true },
+      { "path": "Src/Package-Lock.json", "ignored": true },
+      { "path": "web/dist/app.js", "ignored": true },
+      { "path": "src/app.min.mjs", "ignored": true },
+      { "path": "src/app.js", "ignored": false }
+    ]
+  }
+}

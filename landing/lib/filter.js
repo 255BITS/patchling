@@ -40,10 +40,12 @@ export const DEFAULT_FILTER_MAX_OUTPUT_TOKENS = 1024;
 export const DEFAULT_FILTER_REASONING_EFFORT = 'low';
 
 /**
- * Bumped when the system prompt changes, and included in the cache key so an
- * old judgment is not reused for a new prompt.
+ * Bumped when the prompt or the yes/no contract changes so an old judgment is
+ * not reused. The cache key stringifies this value. `PROMPT_VERSION` is the
+ * shared name; `FILTER_PROMPT_VERSION` is the same number.
  */
-export const FILTER_PROMPT_VERSION = 1;
+export const PROMPT_VERSION = 3;
+export const FILTER_PROMPT_VERSION = PROMPT_VERSION;
 
 /**
  * Lockfiles and generated paths skipped unless `ignore` is `false` or a custom list.
@@ -69,6 +71,7 @@ export const DEFAULT_IGNORE_PATTERNS = [
   '**/packages.lock.json',
   '**/Package.resolved',
   '**/*.min.js',
+  '**/*.min.mjs',
   '**/*.min.css',
   '**/*.map',
   '**/dist/**',
@@ -83,7 +86,9 @@ export const DEFAULT_IGNORE_PATTERNS = [
 
 const POLICIES = ['include', 'exclude', 'truncate'];
 
-const ANSWER_PREFIX = /^(?:answer|relevance|relevant|decision)\s*[:\-]\s*/i;
+const LEADING_WRAPPER = /^(?:answer|decision)\s*:\s*|^[\s"'`*_“”‘’]+/i;
+const TRAILING_WRAPPER = /[\s"'`*_“”‘’]+$/;
+const LEADING_YES_NO = /^(yes|no)\b/i;
 const FENCE_LINE = /^```[a-zA-Z0-9_-]*\s*$/;
 
 const SYSTEM_PROMPT = (
@@ -109,7 +114,11 @@ const SYSTEM_PROMPT = (
  * @property {boolean} cached true when this judgment was reused (a cache hit, or a later path in a shared request)
  * @property {'binary' | 'oversize' | 'truncated' | 'ignored' | null} skippedReason
  *   set when the file was not sent in full. `ignored` is a lockfile or generated path.
- * @property {string | null} error set when the call threw; the file is still included
+ * @property {string | null} error set when the call threw or the answer was empty;
+ *   the file is still included
+ * @property {boolean} failedOpen true when the file was included without a
+ *   definitive yes/no (empty, malformed, thrown, or a cache failure that
+ *   blocked a decision)
  */
 
 /**
@@ -136,16 +145,17 @@ const SYSTEM_PROMPT = (
  * @property {number} [completion_tokens]
  * @property {'binary' | 'oversize' | 'truncated' | null} [skipped_reason]
  * @property {string | null} [error]
+ * @property {boolean} [failed_open]
  * @property {string} [cache_key]
  */
 
 /**
  * In-memory relevance cache with an optional on-disk JSON file.
  *
- * Keys are `model`, SHA-256 of the task, SHA-256 of the original contents, and
- * a variant tag (`full`, `binary-preview`, or `truncated:<maxTokens>:<maxBytes>`),
- * separated by newlines. A judgment on a truncated body is not reused as a
- * full-content judgment.
+ * The key is the SHA-256 of the exact classification inputs, length-prefixed
+ * in this order: prompt version, model, output-token limit, reasoning effort,
+ * intent, file path, and the content actually sent (after truncation). Two
+ * paths never share a key, even when their contents match.
  */
 export class RelevanceCache {
   /**
@@ -161,25 +171,35 @@ export class RelevanceCache {
   }
 
   /**
-   * @param {string} model
-   * @param {string} task
-   * @param {string} content original file text
-   * @param {string} [variant]
-   * @param {number} [maxOutputTokens] completion cap, so a larger budget is a different key
-   * @param {number} [promptVersion] {@link FILTER_PROMPT_VERSION}
+   * SHA-256 hex of the length-prefixed classification inputs.
+   * Each field is its UTF-8 bytes, written as `byteLength`, a newline, the
+   * bytes, and a newline. Field order: prompt version, model, output-token
+   * limit, reasoning effort (`""` when omitted), intent, path, content.
+   * @param {object} fields
+   * @param {string} fields.model
+   * @param {string} fields.intent task text
+   * @param {string} fields.path
+   * @param {string} fields.content body sent to the model, after truncation
+   * @param {number} [fields.maxOutputTokens]
+   * @param {string | null} [fields.reasoningEffort]
+   * @param {number | string} [fields.promptVersion]
    * @returns {Promise<string>}
    */
-  static async makeKey(
-    model,
-    task,
-    content,
-    variant = 'full',
-    maxOutputTokens = DEFAULT_FILTER_MAX_OUTPUT_TOKENS,
-    promptVersion = FILTER_PROMPT_VERSION,
-  ) {
-    const taskHash = await sha256(task);
-    const contentHash = await sha256(content);
-    return `${model}\n${taskHash}\n${contentHash}\n${variant}\n${maxOutputTokens}\n${promptVersion}`;
+  static async makeKey(fields) {
+    const promptVersion = String(
+      fields.promptVersion === undefined ? FILTER_PROMPT_VERSION : fields.promptVersion,
+    );
+    const model = String(fields.model);
+    const tokenLimit = String(
+      fields.maxOutputTokens === undefined ? DEFAULT_FILTER_MAX_OUTPUT_TOKENS : fields.maxOutputTokens,
+    );
+    const effort = fields.reasoningEffort == null || fields.reasoningEffort === undefined
+      ? ''
+      : String(fields.reasoningEffort);
+    const intent = String(fields.intent ?? '');
+    const path = String(fields.path);
+    const content = String(fields.content);
+    return sha256(lengthPrefixed([promptVersion, model, tokenLimit, effort, intent, path, content]));
   }
 
   /**
@@ -281,14 +301,14 @@ export function createMemoryCache() {
  * Browsers and Node 19+ expose Web Crypto as `globalThis.crypto`. Node 18
  * keeps the same API on `node:crypto` as `webcrypto`. That module is imported
  * only when the global is missing, so this file still loads in the browser.
- * @returns {Promise<Crypto>}
+ * @returns {Promise<{ subtle: { digest: Function } }>}
  */
 async function getWebCrypto() {
   const exposed = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
   if (exposed && exposed.subtle) return exposed;
   try {
     const mod = await import('node:crypto');
-    if (mod.webcrypto && mod.webcrypto.subtle) return mod.webcrypto;
+    if (mod.webcrypto && mod.webcrypto.subtle) return /** @type {{ subtle: { digest: Function } }} */ (mod.webcrypto);
   } catch {
     // A browser without `globalThis.crypto`, or a host that cannot load node:crypto.
   }
@@ -296,13 +316,38 @@ async function getWebCrypto() {
 }
 
 /**
- * @param {string} text
+ * Length-prefixed UTF-8 encoding shared with the Python filter.
+ * Each part is `decimalByteLength + "\\n" + utf8 + "\\n"`.
+ * @param {string[]} parts
+ * @returns {Uint8Array}
+ */
+function lengthPrefixed(parts) {
+  const encoder = new TextEncoder();
+  const encoded = parts.map((part) => encoder.encode(part));
+  let size = 0;
+  for (const bytes of encoded) size += String(bytes.length).length + 1 + bytes.length + 1;
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const bytes of encoded) {
+    const header = encoder.encode(`${bytes.length}\n`);
+    out.set(header, offset);
+    offset += header.length;
+    out.set(bytes, offset);
+    offset += bytes.length;
+    out[offset] = 0x0a;
+    offset += 1;
+  }
+  return out;
+}
+
+/**
+ * @param {string | Uint8Array} data
  * @returns {Promise<string>} hex SHA-256
  */
-async function sha256(text) {
-  const data = new TextEncoder().encode(text);
+async function sha256(data) {
+  const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
   const webcrypto = await getWebCrypto();
-  const digest = await webcrypto.subtle.digest('SHA-256', data);
+  const digest = await webcrypto.subtle.digest('SHA-256', bytes);
   let hex = '';
   for (const byte of new Uint8Array(digest)) hex += byte.toString(16).padStart(2, '0');
   return hex;
@@ -325,12 +370,29 @@ function stripFilterThinkTags(text) {
 }
 
 /**
+ * Strip a leading `Answer:` / `Decision:` prefix and surrounding quotes,
+ * markdown bold, and backticks. Repeats so `Answer: **yes**` unwraps fully.
+ * @param {string} text
+ * @returns {string}
+ */
+function unwrapAnswerWrappers(text) {
+  let value = text.trim();
+  for (let i = 0; i < 8; i++) {
+    const next = value.replace(LEADING_WRAPPER, '').replace(TRAILING_WRAPPER, '').trim();
+    if (next === value) break;
+    value = next;
+  }
+  return value;
+}
+
+/**
  * Parse a yes/no relevance answer.
  *
- * Think tags and chain-of-thought reasoning blocks are removed before the
- * answer is read, so a "no" inside a think tag cannot override a final "yes".
- * A single consistent yes or no wins, including "Answer: yes" and a fenced
- * "NO". Both words, or neither, is ambiguous — callers include the file.
+ * Think tags and chain-of-thought reasoning blocks are removed first. The
+ * decision is a leading standalone `yes` or `no` after whitespace, quotes,
+ * markdown bold or backticks, and an `Answer:` or `Decision:` prefix. A word
+ * later in the sentence does not count. Anything else is malformed (`null`);
+ * callers include the file and do not cache it.
  *
  * @param {unknown} raw
  * @returns {{ decision: 'yes' | 'no' | null, cleaned: string }}
@@ -347,20 +409,12 @@ export function parseRelevanceAnswer(raw) {
   ) {
     text = fenceLines.slice(1, -1).join('\n').trim();
   }
-  const cleaned = text.trim().replace(/^`+|`+$/g, '').trim();
-  const contentLines = cleaned.split(/\r\n|\r|\n/).map((line) => line.trim()).filter(Boolean);
-  if (!contentLines.length) return { decision: null, cleaned };
-
-  let answerText = contentLines[0].replace(ANSWER_PREFIX, '').trim();
-  if (contentLines.length > 1) {
-    answerText = `${answerText}\n${contentLines.slice(1).join('\n')}`;
-  }
-  const words = answerText.match(/\b(yes|no)\b/gi) || [];
-  const lowered = words.map((word) => word.toLowerCase());
-  if (lowered.length && new Set(lowered).size === 1) {
-    return { decision: /** @type {'yes' | 'no'} */ (lowered[0]), cleaned };
-  }
-  return { decision: null, cleaned };
+  const cleaned = text.trim();
+  const unwrapped = unwrapAnswerWrappers(cleaned);
+  if (!unwrapped) return { decision: null, cleaned };
+  const match = LEADING_YES_NO.exec(unwrapped);
+  if (!match) return { decision: null, cleaned };
+  return { decision: /** @type {'yes' | 'no'} */ (match[1].toLowerCase()), cleaned };
 }
 
 /**
@@ -436,23 +490,26 @@ function truncateText(text, maxBytes, maxTokens) {
 }
 
 /**
- * UTF-8 prefix. An incomplete trailing character is dropped, matching
- * Python's `errors="ignore"` on a cut byte string.
+ * UTF-8 prefix cut on a code-point boundary. Never emits U+FFFD: a character
+ * that does not fit entirely inside `maxBytes` is dropped.
  * @param {string} text
  * @param {number} maxBytes
  * @returns {string}
  */
 function truncateUtf8(text, maxBytes) {
   const bytes = new TextEncoder().encode(text);
-  if (bytes.length <= maxBytes) return text;
+  if (bytes.length <= maxBytes || maxBytes <= 0) return maxBytes <= 0 ? '' : text;
   let end = maxBytes;
   while (end > 0 && (bytes[end - 1] & 0xc0) === 0x80) end -= 1;
   if (end > 0) {
-    const lead = bytes[end - 1];
+    const leadIndex = end - 1;
+    const lead = bytes[leadIndex];
     const need = lead < 0x80 ? 1 : lead < 0xe0 ? 2 : lead < 0xf0 ? 3 : 4;
-    if (end - 1 + need > maxBytes) end -= 1;
+    const have = maxBytes - leadIndex;
+    if (have < need) end = leadIndex;
+    else end = leadIndex + need;
   }
-  return new TextDecoder().decode(bytes.subarray(0, end));
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, end));
 }
 
 /**
@@ -473,7 +530,70 @@ function utf8ByteLength(text) {
 export function isBinaryContent(content) {
   if (content instanceof Uint8Array) return binaryBytes(content);
   if (typeof content !== 'string') return false;
-  return textLooksBinary(content.slice(0, 8192));
+  return binaryBytes(utf8Prefix(content, 8192));
+}
+
+/**
+ * First `maxBytes` UTF-8 bytes of `text`, which may end on an incomplete
+ * code point when the next character does not fit.
+ * @param {string} text
+ * @param {number} maxBytes
+ * @returns {Uint8Array}
+ */
+function utf8Prefix(text, maxBytes) {
+  const encoder = new TextEncoder();
+  /** @type {number[]} */
+  const out = [];
+  let n = 0;
+  for (const ch of text) {
+    if (n >= maxBytes) break;
+    const bytes = encoder.encode(ch);
+    for (const byte of bytes) out.push(byte);
+    n += bytes.length;
+  }
+  return Uint8Array.from(out).subarray(0, maxBytes);
+}
+
+/**
+ * @param {number} lead
+ * @returns {number} expected sequence length, or 0 when `lead` cannot start one
+ */
+function utf8SequenceLength(lead) {
+  if (lead <= 0x7f) return 1;
+  if (lead >= 0xc2 && lead <= 0xdf) return 2;
+  if (lead >= 0xe0 && lead <= 0xef) return 3;
+  if (lead >= 0xf0 && lead <= 0xf4) return 4;
+  return 0;
+}
+
+/**
+ * Decode `sample` as UTF-8. An incomplete trailing sequence of at most 3
+ * bytes is dropped. Genuinely invalid bytes return null.
+ * @param {Uint8Array} sample
+ * @returns {string | null}
+ */
+function decodeUtf8AllowingShortTail(sample) {
+  const fatal = () => new TextDecoder('utf-8', { fatal: true });
+  try {
+    return fatal().decode(sample);
+  } catch {
+    // The sample is not well-formed. A cut at 8192 may end inside one character.
+  }
+  let index = sample.length - 1;
+  let continuations = 0;
+  while (continuations < 3 && index >= 0 && (sample[index] & 0xc0) === 0x80) {
+    continuations += 1;
+    index -= 1;
+  }
+  if (index < 0) return null;
+  const need = utf8SequenceLength(sample[index]);
+  const have = sample.length - index;
+  if (!need || have >= need || need - have > 3 || continuations !== have - 1) return null;
+  try {
+    return fatal().decode(sample.subarray(0, index));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -485,12 +605,9 @@ function binaryBytes(bytes) {
   for (let i = 0; i < sample.length; i++) {
     if (sample[i] === 0) return true;
   }
-  try {
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(sample);
-    return textLooksBinary(text);
-  } catch {
-    return true;
-  }
+  const text = decodeUtf8AllowingShortTail(sample);
+  if (text == null) return true;
+  return textLooksBinary(text);
 }
 
 /**
@@ -535,23 +652,6 @@ function resolveLimit(value, fallback) {
 }
 
 /**
- * @param {unknown} value
- * @returns {string}
- */
-/**
- * Tag a limit the way Python's f-string does: omitted uses the default number,
- * `null` is `None`, and `0` stays `0`.
- * @param {unknown} value
- * @param {number} fallback
- * @returns {string}
- */
-function rawLimitTag(value, fallback) {
-  const chosen = value === undefined ? fallback : value;
-  if (chosen === null || chosen === undefined) return 'None';
-  return String(chosen);
-}
-
-/**
  * @param {object} fields
  * @returns {RelevanceDecision}
  */
@@ -567,6 +667,7 @@ function decisionObject(fields) {
     cached: !!fields.cached,
     skippedReason: fields.skippedReason ?? null,
     error: fields.error ?? null,
+    failedOpen: !!fields.failedOpen,
   };
 }
 
@@ -589,6 +690,7 @@ function decisionFromRecord(path, record, cached) {
     cached,
     skippedReason: rec.skipped_reason ?? rec.skippedReason ?? null,
     error: rec.error ?? null,
+    failedOpen: !!(rec.failed_open ?? rec.failedOpen),
   });
 }
 
@@ -614,14 +716,13 @@ function skipDecision(path, decision, skippedReason, reason) {
 
 /**
  * @param {string} task
- * @param {string[]} paths
+ * @param {string} path
  * @param {string} body
  * @param {string | null} note
  * @returns {string}
  */
-function buildUserPrompt(task, paths, body, note) {
-  const label = paths.length === 1 ? 'File path' : 'File paths';
-  const parts = [`Task:\n${task}`, `${label}:\n${paths.join('\n')}`];
+function buildUserPrompt(task, path, body, note) {
+  const parts = [`Task:\n${task}`, `File path:\n${path}`];
   if (note) parts.push(note);
   parts.push(`File contents:\n${body}`);
   parts.push('Is this file relevant to the task? yes/no');
@@ -679,7 +780,35 @@ function isTransientFilterError(err) {
   const message = errorMessage(err);
   if (/timeout|timed out/i.test(message)) return true;
   if (/\b5\d\d\b/.test(message)) return true;
+  if (/billing reservation/i.test(message)) return true;
   return false;
+}
+
+/**
+ * A 4xx that names `reasoning_effort`. The filter retries that call once
+ * without the parameter.
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+function isReasoningEffortRejected(err) {
+  const message = errorMessage(err);
+  if (!/reasoning[_ ]effort/i.test(message)) return false;
+  const status = err && typeof err === 'object'
+    ? (/** @type {{ status?: number, statusCode?: number }} */ (err).status
+      ?? /** @type {{ statusCode?: number }} */ (err).statusCode)
+    : undefined;
+  if (typeof status === 'number') return status >= 400 && status < 500;
+  return /\b4\d\d\b/.test(message);
+}
+
+/**
+ * @param {unknown} err
+ */
+function logCacheError(err) {
+  const message = errorMessage(err);
+  if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+    console.warn(`relevance cache error: ${message}`);
+  }
 }
 
 /**
@@ -752,9 +881,12 @@ function resolveIgnore(ignore) {
  */
 function isFailedOpen(decision) {
   if (!decision) return false;
+  if (decision.failedOpen) return true;
   if (decision.error) return true;
-  return typeof decision.reason === 'string'
-    && decision.reason.startsWith('ambiguous answer; included by default');
+  return typeof decision.reason === 'string' && (
+    decision.reason.startsWith('ambiguous answer; included by default')
+    || decision.reason.startsWith('malformed answer; included by default')
+  );
 }
 
 /**
@@ -765,15 +897,21 @@ function isFailedOpen(decision) {
  */
 function reusableHit(hit) {
   if (!hit || (hit.decision !== 'yes' && hit.decision !== 'no') || hit.error) return false;
+  if (hit.failed_open || /** @type {{ failedOpen?: boolean }} */ (hit).failedOpen) return false;
   const reason = hit.reason || '';
-  if (reason.startsWith('ambiguous answer') || reason.startsWith('error; included by default')) return false;
+  if (
+    reason.startsWith('ambiguous answer')
+    || reason.startsWith('malformed answer')
+    || reason.startsWith('error; included by default')
+  ) return false;
   return true;
 }
 
 /**
- * @param {Array<string>} items
+ * @template T
+ * @param {T[]} items
  * @param {number} limit
- * @param {(item: string) => Promise<void>} fn
+ * @param {(item: T) => Promise<void>} fn
  * @returns {Promise<void>}
  */
 async function mapLimit(items, limit, fn) {
@@ -821,8 +959,10 @@ async function cachePut(store, key, record) {
  *
  * `cache` is a {@link RelevanceCache}, a filesystem path (memory plus that
  * JSON file), `true` or omitted (a fresh in-memory cache for this call), or
- * `null` / `false` (disabled). The cache key is the model, a hash of the task,
- * a hash of the original file contents, and a truncation variant.
+ * `null` / `false` (disabled). The cache key hashes the prompt version, model,
+ * output-token limit, reasoning effort, task, path, and the body that was
+ * sent (after truncation). Each path is classified on its own, including
+ * paths whose contents match.
  *
  * Binary files and files over `maxBytes` / `maxTokens` are not sent in full.
  * `onBinary` and `onOversize` are `include` (keep, no model call), `exclude`
@@ -842,7 +982,7 @@ async function cachePut(store, key, record) {
  * @param {'include' | 'exclude' | 'truncate'} [opts.onBinary] default `exclude`
  * @param {number} [opts.maxOutputTokens] completion cap (default {@link DEFAULT_FILTER_MAX_OUTPUT_TOKENS})
  * @param {string | null} [opts.reasoningEffort] default {@link DEFAULT_FILTER_REASONING_EFFORT}; `null` omits it
- * @param {number} [opts.retries] extra attempts after a timeout or HTTP 5xx (default 2)
+ * @param {number} [opts.retries] extra attempts after a timeout, HTTP 5xx, or a billing-reservation error (default 2). A 4xx that names `reasoning_effort` is retried once without that parameter and does not consume one of these attempts.
  * @param {number} [opts.retryBaseMs] backoff base in ms (default 200, doubles, capped at 30s)
  * @param {boolean | string[] | null} [opts.ignore] lockfile and generated-file patterns.
  *   `true` or omitted uses {@link DEFAULT_IGNORE_PATTERNS}. `false` or `null` classifies every path.
@@ -887,23 +1027,16 @@ export async function filterRelevant(files, task, opts = {}) {
 
   /** @type {Map<string, RelevanceDecision>} */
   const byPath = new Map();
-  /** @type {Map<string, Array<{ path: string, body: string, note: string | null, skippedReason: 'truncated' | null }>>} */
-  const groups = new Map();
-  /** @type {string[]} */
-  const groupOrder = [];
-  const entries = Object.entries(files);
-
   /**
-   * @param {string} key
-   * @param {{ path: string, body: string, note: string | null, skippedReason: 'truncated' | null }} item
+   * @typedef {object} PendingFile
+   * @property {string} path
+   * @property {string} body content sent to the model
+   * @property {string | null} note
+   * @property {'truncated' | null} skippedReason
    */
-  function enqueue(key, item) {
-    if (!groups.has(key)) {
-      groups.set(key, []);
-      groupOrder.push(key);
-    }
-    groups.get(key).push(item);
-  }
+  /** @type {PendingFile[]} */
+  const pending = [];
+  const entries = Object.entries(files);
 
   /**
    * @param {RelevanceDecision} decision
@@ -934,8 +1067,7 @@ export async function filterRelevant(files, task, opts = {}) {
         const nbytes = content instanceof Uint8Array ? content.length : utf8ByteLength(text);
         const note = 'Note: this file is binary. Its bytes are not shown; judge relevance from the path and this note.';
         const body = `[binary file, ${nbytes} bytes, contents omitted]`;
-        const key = await RelevanceCache.makeKey(model, task, text, 'binary-preview', maxOutputTokens);
-        enqueue(key, { path, body, note, skippedReason: 'truncated' });
+        pending.push({ path, body, note, skippedReason: 'truncated' });
       } else {
         const decision = onBinary === 'include' ? 'yes' : 'no';
         const verb = decision === 'yes' ? 'included' : 'excluded';
@@ -957,9 +1089,7 @@ export async function filterRelevant(files, task, opts = {}) {
           'Note: this file was truncated to fit the relevance check '
           + `(${nBytes} bytes, ${nTokens} tokens). Judge from the portion shown.`
         );
-        const variant = `truncated:${rawLimitTag(opts.maxTokens, DEFAULT_FILTER_MAX_TOKENS)}:${rawLimitTag(opts.maxBytes, DEFAULT_FILTER_MAX_BYTES)}`;
-        const key = await RelevanceCache.makeKey(model, task, text, variant, maxOutputTokens);
-        enqueue(key, { path, body, note, skippedReason: 'truncated' });
+        pending.push({ path, body, note, skippedReason: 'truncated' });
       } else {
         const decision = onOversize === 'include' ? 'yes' : 'no';
         const verb = decision === 'yes' ? 'included' : 'excluded';
@@ -975,25 +1105,54 @@ export async function filterRelevant(files, task, opts = {}) {
       continue;
     }
 
-    const key = await RelevanceCache.makeKey(model, task, text, 'full', maxOutputTokens);
-    enqueue(key, { path, body: text, note: null, skippedReason: null });
+    pending.push({ path, body: text, note: null, skippedReason: null });
   }
 
-  if (store && typeof store.load === 'function') await store.load();
+  if (store && typeof store.load === 'function') {
+    try {
+      await store.load();
+    } catch (err) {
+      logCacheError(err);
+    }
+  }
 
   /**
    * @param {string} key
-   * @returns {Promise<boolean>}
+   * @returns {Promise<RelevanceCacheRecord | undefined>}
    */
-  async function cached(key) {
-    if (!store) return false;
-    const hit = await cacheGet(store, key);
-    return reusableHit(hit);
+  async function readCache(key) {
+    if (!store) return undefined;
+    try {
+      return await cacheGet(store, key);
+    } catch (err) {
+      logCacheError(err);
+      return undefined;
+    }
   }
 
+  /**
+   * Key for a lookup before the call, using the configured reasoning effort.
+   * @param {PendingFile} item
+   * @param {string | null} effort
+   * @returns {Promise<string>}
+   */
+  function keyFor(item, effort) {
+    return RelevanceCache.makeKey({
+      model,
+      intent: task,
+      path: item.path,
+      content: item.body,
+      maxOutputTokens,
+      reasoningEffort: effort,
+      promptVersion: FILTER_PROMPT_VERSION,
+    });
+  }
+
+  const configuredEffort = reasoningEffort || null;
   let needsCall = false;
-  for (const key of groupOrder) {
-    if (!(await cached(key))) {
+  for (const item of pending) {
+    const hit = await readCache(await keyFor(item, configuredEffort));
+    if (!reusableHit(hit)) {
       needsCall = true;
       break;
     }
@@ -1006,34 +1165,32 @@ export async function filterRelevant(files, task, opts = {}) {
   }
 
   /**
-   * @param {string} key
+   * @param {PendingFile} item
    * @returns {Promise<void>}
    */
-  async function runGroup(key) {
-    const items = groups.get(key);
-    if (store) {
-      const hit = await cacheGet(store, key);
-      if (reusableHit(hit)) {
-        for (const item of items) {
-          const decision = decisionFromRecord(item.path, { ...hit, cache_key: key }, true);
-          byPath.set(item.path, decision);
-          emit(decision);
-        }
-        return;
-      }
+  async function runOne(item) {
+    const lookupKey = await keyFor(item, configuredEffort);
+    const hit = await readCache(lookupKey);
+    if (reusableHit(hit)) {
+      const decision = decisionFromRecord(item.path, { ...hit, cache_key: lookupKey }, true);
+      byPath.set(item.path, decision);
+      emit(decision);
+      return;
     }
 
-    const sample = items[0];
     let raw;
     let promptTokens;
     let completionTokens;
     let totalTokens;
     /** @type {unknown} */
     let lastError = null;
-    const userPrompt = buildUserPrompt(task, items.map((item) => item.path), sample.body, sample.note);
+    /** @type {string | null} */
+    let effortUsed = configuredEffort;
+    const userPrompt = buildUserPrompt(task, item.path, item.body, item.note);
     let userContent = userPrompt;
     if (model && model.includes('gemini')) userContent = `${SYSTEM_PROMPT}\n${userPrompt}`;
     const attempts = retries + 1;
+    let strippedEffort = false;
     for (let attempt = 0; attempt < attempts; attempt++) {
       try {
         const response = await callLlm({
@@ -1047,7 +1204,7 @@ export async function filterRelevant(files, task, opts = {}) {
           maxTokens: maxOutputTokens,
           temperature: 0,
           budgetTokens: null,
-          reasoningEffort: reasoningEffort || null,
+          reasoningEffort: effortUsed,
           maxRetries: 0,
         });
         ({ raw, promptTokens, completionTokens, tokens: totalTokens } = usageAndText(response));
@@ -1055,6 +1212,12 @@ export async function filterRelevant(files, task, opts = {}) {
         break;
       } catch (err) {
         lastError = err;
+        if (!strippedEffort && effortUsed && isReasoningEffortRejected(err)) {
+          effortUsed = null;
+          strippedEffort = true;
+          attempt -= 1;
+          continue;
+        }
         const again = attempt + 1 < attempts && isTransientFilterError(err);
         if (!again) break;
         const wait = Math.min(retryBaseMs * 2 ** attempt, 30_000);
@@ -1063,22 +1226,21 @@ export async function filterRelevant(files, task, opts = {}) {
     }
     if (lastError) {
       const message = errorMessage(lastError);
-      items.forEach((item, index) => {
-        const decision = decisionObject({
-          path: item.path,
-          decision: 'yes',
-          reason: `error; included by default: ${message}`,
-          raw: null,
-          tokens: 0,
-          promptTokens: 0,
-          completionTokens: 0,
-          cached: index > 0,
-          skippedReason: item.skippedReason,
-          error: message,
-        });
-        byPath.set(item.path, decision);
-        emit(decision);
+      const decision = decisionObject({
+        path: item.path,
+        decision: 'yes',
+        reason: `error; included by default: ${message}`,
+        raw: null,
+        tokens: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        cached: false,
+        skippedReason: item.skippedReason,
+        error: message,
+        failedOpen: true,
       });
+      byPath.set(item.path, decision);
+      emit(decision);
       return;
     }
 
@@ -1090,18 +1252,22 @@ export async function filterRelevant(files, task, opts = {}) {
     /** @type {string | null} */
     let error = null;
     let cacheable = false;
+    let failedOpen = false;
     if (parsed.decision == null && !parsed.cleaned) {
       decisionName = 'yes';
       error = 'empty answer';
       reason = `error; included by default: ${error}`;
+      failedOpen = true;
     } else if (parsed.decision == null) {
       decisionName = 'yes';
-      reason = `ambiguous answer; included by default: ${parsed.cleaned}`;
+      reason = `malformed answer; included by default: ${parsed.cleaned}`;
+      failedOpen = true;
     } else {
       decisionName = parsed.decision;
       reason = parsed.cleaned;
       cacheable = true;
     }
+    const storeKey = await keyFor(item, effortUsed);
     if (store && cacheable) {
       /** @type {RelevanceCacheRecord} */
       const record = {
@@ -1111,34 +1277,44 @@ export async function filterRelevant(files, task, opts = {}) {
         tokens: totalTokens,
         prompt_tokens: promptTokens,
         completion_tokens: completionTokens,
-        skipped_reason: sample.skippedReason,
+        skipped_reason: item.skippedReason,
         error: null,
-        cache_key: key,
+        cache_key: storeKey,
+        failed_open: false,
       };
-      await cachePut(store, key, record);
+      try {
+        await cachePut(store, storeKey, record);
+      } catch (err) {
+        logCacheError(err);
+      }
     }
-    items.forEach((item, index) => {
-      const decision = decisionObject({
-        path: item.path,
-        decision: decisionName,
-        reason,
-        raw,
-        tokens: totalTokens,
-        promptTokens,
-        completionTokens,
-        cached: index > 0,
-        skippedReason: item.skippedReason,
-        error,
-      });
-      byPath.set(item.path, decision);
-      emit(decision);
+    const decision = decisionObject({
+      path: item.path,
+      decision: decisionName,
+      reason,
+      raw,
+      tokens: totalTokens,
+      promptTokens,
+      completionTokens,
+      cached: false,
+      skippedReason: item.skippedReason,
+      error,
+      failedOpen,
     });
+    byPath.set(item.path, decision);
+    emit(decision);
   }
 
   try {
-    await mapLimit(groupOrder, concurrency, runGroup);
+    await mapLimit(pending, concurrency, runOne);
   } finally {
-    if (store && typeof store.flush === 'function') await store.flush();
+    if (store && typeof store.flush === 'function') {
+      try {
+        await store.flush();
+      } catch (err) {
+        logCacheError(err);
+      }
+    }
   }
 
   /** @type {RelevanceDecision[]} */

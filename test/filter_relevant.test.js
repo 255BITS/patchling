@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,6 +20,7 @@ import {
   DEFAULT_FILTER_REASONING_EFFORT,
   DEFAULT_FILTER_CONCURRENCY,
   FILTER_PROMPT_VERSION,
+  PROMPT_VERSION,
   DEFAULT_IGNORE_PATTERNS,
   isIgnoredPath,
   callLlm,
@@ -103,12 +103,33 @@ test('parseRelevanceAnswer strips think tags before deciding', () => {
   assert.equal(parseRelevanceAnswer('<thinking>maybe</thinking>\nyes').decision, 'yes');
 });
 
-test('parseRelevanceAnswer is ambiguous when both words appear, or neither', () => {
+test('parseRelevanceAnswer is malformed without a leading standalone yes or no', () => {
   assert.equal(parseRelevanceAnswer("I'm not sure about this one").decision, null);
-  assert.equal(parseRelevanceAnswer('yes for the helper, no for the tests').decision, null);
   assert.equal(parseRelevanceAnswer('').decision, null);
   assert.equal(parseRelevanceAnswer('nope').decision, null);
-  assert.equal(parseRelevanceAnswer('The answer is no.').decision, 'no');
+  assert.equal(parseRelevanceAnswer('The answer is no.').decision, null);
+  assert.equal(parseRelevanceAnswer('yes for the helper, no for the tests').decision, 'yes');
+});
+
+test('parseRelevanceAnswer: quoted yes/no is a decision', () => {
+  assert.equal(parseRelevanceAnswer('"yes"').decision, 'yes');
+  assert.equal(parseRelevanceAnswer("'no'").decision, 'no');
+  assert.equal(parseRelevanceAnswer('**yes**').decision, 'yes');
+  assert.equal(parseRelevanceAnswer('`no`').decision, 'no');
+  assert.equal(parseRelevanceAnswer('Answer: **yes**').decision, 'yes');
+  assert.equal(parseRelevanceAnswer('Decision: "no"').decision, 'no');
+});
+
+test('parseRelevanceAnswer: negated "There is no doubt this file is required" is malformed', () => {
+  const parsed = parseRelevanceAnswer('There is no doubt this file is required');
+  assert.equal(parsed.decision, null);
+  assert.match(parsed.cleaned, /no doubt/);
+});
+
+test('parseRelevanceAnswer: explanatory wording is malformed', () => {
+  assert.equal(parseRelevanceAnswer('The file defines helpers used by the task').decision, null);
+  assert.equal(parseRelevanceAnswer('I would say no because it is unrelated').decision, null);
+  assert.equal(parseRelevanceAnswer('This file is not relevant to the task').decision, null);
 });
 
 test('filterRelevant keeps only yes files and reports camelCase decisions', async () => {
@@ -172,8 +193,10 @@ test('ambiguous answers and thrown errors include the file', async () => {
   const by = Object.fromEntries(result.decisions.map((d) => [d.path, d]));
   assert.equal(by['ambiguous.py'].decision, 'yes');
   assert.equal(by['ambiguous.py'].error, null);
-  assert.match(by['ambiguous.py'].reason, /ambiguous/);
+  assert.equal(by['ambiguous.py'].failedOpen, true);
+  assert.match(by['ambiguous.py'].reason, /malformed/);
   assert.equal(by['broken.py'].decision, 'yes');
+  assert.equal(by['broken.py'].failedOpen, true);
   assert.match(by['broken.py'].error, /connection reset/);
   assert.match(by['broken.py'].reason, /connection reset/);
   assert.equal(by['broken.py'].tokens, 0);
@@ -223,10 +246,17 @@ test('memory and disk cache round-trip', async () => {
   assert.equal(stored.version, 1);
   assert.equal(Object.keys(stored.entries).length, 1);
   const [storedKey, storedValue] = Object.entries(stored.entries)[0];
-  assert.equal(storedKey.split('\n').length, 6);
-  assert.equal(storedKey.split('\n')[3], 'full');
-  assert.equal(storedKey.split('\n')[4], String(DEFAULT_FILTER_MAX_OUTPUT_TOKENS));
-  assert.equal(storedKey.split('\n')[5], String(FILTER_PROMPT_VERSION));
+  assert.match(storedKey, /^[0-9a-f]{64}$/);
+  const expectedKey = await RelevanceCache.makeKey({
+    model: 'fake',
+    intent: 'ship it',
+    path: 'a.py',
+    content: "print('cached')\n",
+    maxOutputTokens: DEFAULT_FILTER_MAX_OUTPUT_TOKENS,
+    reasoningEffort: 'low',
+    promptVersion: FILTER_PROMPT_VERSION,
+  });
+  assert.equal(storedKey, expectedKey);
   assert.equal(storedValue.decision, 'yes');
   assert.equal(storedValue.prompt_tokens, 5);
   assert.equal(storedValue.skipped_reason, null);
@@ -289,25 +319,50 @@ test('a corrupt disk cache is ignored', async () => {
   assert.equal(rewritten.version, 1);
 });
 
-test('duplicate contents share one request', async () => {
+test('same-batch: empty unrelated.py "no" does not exclude empty src/target.py', async () => {
+  const mock = llm((req) => {
+    const paths = pathsOf(req);
+    assert.equal(paths.length, 1);
+    return response(paths[0] === 'unrelated.py' ? 'no' : 'yes');
+  });
+  const result = await filterRelevant(
+    { 'unrelated.py': '', 'src/target.py': '' },
+    'edit the target',
+    { ...baseOpts, cache: false, callLlm: mock.fn },
+  );
+  assert.equal(mock.calls.length, 2);
+  const by = Object.fromEntries(result.decisions.map((d) => [d.path, d]));
+  assert.equal(by['unrelated.py'].decision, 'no');
+  assert.equal(by['unrelated.py'].failedOpen, false);
+  assert.equal(by['src/target.py'].decision, 'yes');
+  assert.equal(by['src/target.py'].cached, false);
+  assert.deepEqual(Object.keys(result.files), ['src/target.py']);
+  assert.equal(result.files['src/target.py'], '');
+});
+
+test('cross-call: cached no for empty unrelated.py does not exclude empty src/target.py', async () => {
+  const cache = new RelevanceCache();
   let n = 0;
   const mock = llm((req) => {
     n += 1;
     const paths = pathsOf(req);
-    assert.ok(paths.includes('a.py') && paths.includes('b.py'));
-    return response('yes', 4, 1, 5);
+    return response(paths[0] === 'unrelated.py' ? 'no' : 'yes');
   });
-  const result = await filterRelevant(
-    { 'a.py': 'SAME', 'b.py': 'SAME' },
-    'task',
-    { ...baseOpts, model: 'm', callLlm: mock.fn },
+  const opts = { model: 'm', cache, apiKey: 'k', callLlm: mock.fn };
+  const first = await filterRelevant({ 'unrelated.py': '' }, 'edit the target', opts);
+  assert.equal(first.decisions[0].decision, 'no');
+  const second = await filterRelevant(
+    { 'unrelated.py': '', 'src/target.py': '' },
+    'edit the target',
+    opts,
   );
-  assert.equal(n, 1);
-  assert.equal(result.decisions[0].cached, false);
-  assert.equal(result.decisions[1].cached, true);
-  assert.equal(result.billedTokens, 5);
-  assert.deepEqual(Object.keys(result.files).sort(), ['a.py', 'b.py']);
-  assert.equal(result.files['a.py'], 'SAME');
+  assert.equal(n, 2);
+  const by = Object.fromEntries(second.decisions.map((d) => [d.path, d]));
+  assert.equal(by['unrelated.py'].decision, 'no');
+  assert.equal(by['unrelated.py'].cached, true);
+  assert.equal(by['src/target.py'].decision, 'yes');
+  assert.equal(by['src/target.py'].cached, false);
+  assert.equal('src/target.py' in second.files, true);
 });
 
 test('concurrency stays bounded and result order follows the input', async () => {
@@ -422,9 +477,7 @@ test('a truncated judgment is not reused as a full read', async () => {
   assert.equal(second.decisions[0].skippedReason, null);
   assert.equal(n, 2);
   const stored = JSON.parse(readFileSync(cache.path, 'utf8'));
-  const variants = Object.keys(stored.entries).map((key) => key.split('\n')[3]);
-  assert.ok(variants.includes('truncated:None:20'));
-  assert.ok(variants.includes('full'));
+  assert.equal(Object.keys(stored.entries).length, 2);
 });
 
 test('maxBytes counts UTF-8 bytes and a token cap truncates before the byte cap', async () => {
@@ -619,7 +672,8 @@ test('model defaults to GPTDIFF_FILTER_MODEL, else xiaomi/mimo-v2.6-flash', asyn
   assert.equal(DEFAULT_FILTER_MAX_TOKENS, 12_000);
   assert.equal(DEFAULT_FILTER_MAX_OUTPUT_TOKENS, 1024);
   assert.equal(DEFAULT_FILTER_REASONING_EFFORT, 'low');
-  assert.equal(FILTER_PROMPT_VERSION, 1);
+  assert.equal(FILTER_PROMPT_VERSION, 3);
+  assert.equal(PROMPT_VERSION, 3);
   assert.equal(DEFAULT_FILTER_CONCURRENCY, 8);
   assert.equal(isBinaryContent('hello\0world'), true);
   assert.equal(isBinaryContent('plain text'), false);
@@ -709,7 +763,9 @@ test('an empty answer is an error, fails open, and is not cached', async () => {
   assert.equal(first.failedOpen, 1);
   assert.equal('a.py' in first.files, true);
   assert.match(formatFilterSummary(first), /1 failed open/);
-  const stored = await cache.get(await RelevanceCache.makeKey('m', 'task', 'v = 1\n', 'full'));
+  const stored = await cache.get(await RelevanceCache.makeKey({
+    model: 'm', intent: 'task', path: 'a.py', content: 'v = 1\n',
+  }));
   assert.equal(stored, undefined);
 
   const second = await filterRelevant(files, 'task', {
@@ -735,7 +791,8 @@ test('ambiguous answers fail open and are not cached', async () => {
   assert.equal(n, 2);
   assert.equal(first.decisions[0].decision, 'yes');
   assert.equal(first.decisions[0].error, null);
-  assert.match(first.decisions[0].reason, /ambiguous/);
+  assert.match(first.decisions[0].reason, /malformed/);
+  assert.equal(first.decisions[0].failedOpen, true);
   assert.equal(first.failedOpen, 1);
   assert.equal(second.decisions[0].decision, 'no');
   assert.equal(second.decisions[0].cached, false);
@@ -749,10 +806,12 @@ test('a stored fallback is not reused', async () => {
   });
   const cache = new RelevanceCache();
   const body = 'v = 1\n';
-  const key = await RelevanceCache.makeKey('m', 'task', body, 'full');
+  const key = await RelevanceCache.makeKey({
+    model: 'm', intent: 'task', path: 'a.py', content: body,
+  });
   await cache.put(key, {
     decision: 'yes',
-    reason: 'ambiguous answer; included by default: maybe',
+    reason: 'malformed answer; included by default: maybe',
     error: null,
     tokens: 4,
   });
@@ -773,11 +832,14 @@ test('cache keys hash when global crypto is missing (Node 18)', async () => {
   });
   try {
     const body = 'v = 1\n';
-    const key = await RelevanceCache.makeKey('m', 'task', body);
-    const parts = key.split('\n');
-    assert.equal(parts[0], 'm');
-    assert.equal(parts[1], createHash('sha256').update('task').digest('hex'));
-    assert.equal(parts[2], createHash('sha256').update(body).digest('hex'));
+    const key = await RelevanceCache.makeKey({
+      model: 'm', intent: 'task', path: 'a.py', content: body,
+    });
+    assert.match(key, /^[0-9a-f]{64}$/);
+    const again = await RelevanceCache.makeKey({
+      model: 'm', intent: 'task', path: 'other.py', content: body,
+    });
+    assert.notEqual(key, again);
     const mock = llm(() => response('yes'));
     const result = await filterRelevant({ 'a.py': body }, 'task', {
       model: 'm', cache: false, apiKey: 'k', callLlm: mock.fn,
@@ -855,6 +917,113 @@ test('a non-transient error is not retried and still fails open', async () => {
   assert.equal(result.files['a.py'], 'v = 1\n');
 });
 
+test('truncateUtf8 cuts éX at 2 bytes without U+FFFD', async () => {
+  const seen = [];
+  const mock = llm((req) => {
+    seen.push(bodyOf(req));
+    return response('yes');
+  });
+  const cases = [
+    ['éX', 2, 'é'],
+    ['€X', 2, ''],
+    ['😀X', 3, ''],
+    ['a€b', 4, 'a€'],
+  ];
+  for (const [text, maxBytes, expected] of cases) {
+    await filterRelevant({ 'a.py': text }, 'task', {
+      ...baseOpts, maxBytes, maxTokens: null, onOversize: 'truncate', callLlm: mock.fn,
+    });
+    assert.equal(seen.at(-1), expected);
+    assert.equal(seen.at(-1).includes('\uFFFD'), false);
+  }
+});
+
+test('isBinaryContent tolerates a multibyte character cut at byte 8192', () => {
+  function sample(pad, tail) {
+    const bytes = new Uint8Array(pad + tail.length);
+    bytes.fill(0x61, 0, pad);
+    bytes.set(tail, pad);
+    return bytes;
+  }
+  assert.equal(isBinaryContent(sample(8191, [0xc3])), false);
+  assert.equal(isBinaryContent(sample(8190, [0xe2, 0x82])), false);
+  assert.equal(isBinaryContent(sample(8189, [0xf0, 0x9f, 0x98])), false);
+  assert.equal(isBinaryContent(sample(8191, [0xff])), true);
+  assert.equal(isBinaryContent(Uint8Array.from([0x68, 0x69, 0x00])), true);
+  const valid = new Uint8Array(8192);
+  valid.fill(0x61);
+  assert.equal(isBinaryContent(valid), false);
+});
+
+test('a 4xx that names reasoning_effort is retried once without it', async () => {
+  const efforts = [];
+  const wrapped = async (req) => {
+    efforts.push(req.reasoningEffort ?? null);
+    if (efforts.length === 1) {
+      const err = new Error('LLM request failed (400) from example: invalid reasoning_effort');
+      err.status = 400;
+      throw err;
+    }
+    return response('no');
+  };
+  const result = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', {
+    ...baseOpts, callLlm: wrapped, retryBaseMs: 0, retries: 0,
+  });
+  assert.deepEqual(efforts, ['low', null]);
+  assert.equal(result.decisions[0].decision, 'no');
+  assert.equal(result.decisions[0].failedOpen, false);
+  assert.equal(result.failedOpen, 0);
+});
+
+test('billing reservation errors are retried then fail open', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    return new Error('billing reservation failed');
+  });
+  const result = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', {
+    ...baseOpts, callLlm: mock.fn, retries: 2, retryBaseMs: 0,
+  });
+  assert.equal(n, 3);
+  assert.equal(result.decisions[0].decision, 'yes');
+  assert.equal(result.decisions[0].failedOpen, true);
+  assert.equal(result.failedOpen, 1);
+});
+
+test('cache read and write errors are logged and do not abort the run', async () => {
+  const warnings = [];
+  const original = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    let puts = 0;
+    const cache = {
+      async get() {
+        throw new Error('disk read failed');
+      },
+      async put() {
+        puts += 1;
+        throw new Error('disk write failed');
+      },
+      async flush() {
+        throw new Error('disk flush failed');
+      },
+    };
+    const mock = llm(() => response('no'));
+    const result = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', {
+      model: 'm', cache, apiKey: 'k', callLlm: mock.fn,
+    });
+    assert.equal(result.decisions[0].decision, 'no');
+    assert.equal(result.decisions[0].failedOpen, false);
+    assert.equal(puts, 1);
+    assert.match(warnings.join('\n'), /disk read failed/);
+    assert.match(warnings.join('\n'), /disk write failed/);
+    assert.match(warnings.join('\n'), /disk flush failed/);
+    assert.equal('a.py' in result.files, false);
+  } finally {
+    console.warn = original;
+  }
+});
+
 test('lockfiles and generated files are skipped unless ignore is configured', async () => {
   assert.equal(isIgnoredPath('package-lock.json', DEFAULT_IGNORE_PATTERNS), true);
   assert.equal(isIgnoredPath('app/yarn.lock', DEFAULT_IGNORE_PATTERNS), true);
@@ -862,6 +1031,8 @@ test('lockfiles and generated files are skipped unless ignore is configured', as
   assert.equal(isIgnoredPath('dist/app.js'), true);
   assert.equal(isIgnoredPath('web/dist/main.min.js'), true);
   assert.equal(isIgnoredPath('src/app.min.js'), true);
+  assert.equal(isIgnoredPath('src/app.min.mjs'), true);
+  assert.equal(isIgnoredPath('Src/Package-Lock.json'), true);
   assert.equal(isIgnoredPath('keep.py'), false);
 
   const seen = [];
