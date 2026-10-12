@@ -37,3 +37,72 @@ export function applyDiff(files: Record<string, string>, diffText: string): {
     changed: boolean;
     files: Record<string, string>;
 };
+/**
+ * Parse the hunks of a single-file patch.
+ *
+ * Returns null when a body line is ambiguous (`++`, which is either a doubled
+ * add marker or a literal line that starts with `+`). A non-standard hunk
+ * header with no line numbers is kept and anchored at the start of the file.
+ * {@link applyPatchToFile} refuses that header instead; this parser exists so
+ * a later intent check can still see the `+`/`-` lines.
+ *
+ * @param {string} patch
+ * @returns {Array<{ hint: number, ops: Array<{ kind: string, text: string }> }> | null}
+ */
+export function parsePatchHunks(patch: string): Array<{
+    hint: number;
+    ops: Array<{
+        kind: string;
+        text: string;
+    }>;
+}> | null;
+/**
+ * Whether `updatedContent` does something other than apply this diff's
+ * `+`/`-` lines to `originalContent`.
+ *
+ * Armed when a context line does not occur anywhere in the original file —
+ * the case where a model copies the diff's stale context in, or drops lines
+ * the hunk never removed. A context line that differs only by a uniform
+ * indentation shift, or a hunk that matches somewhere other than its `@@`
+ * line, still counts as context: the edit is accepted at the file's indent.
+ * A result that deletes any other line, or an empty rewrite of a non-empty
+ * file, is still a violation.
+ *
+ * A `-` line that merely fails to match (quotes, whitespace) does not by
+ * itself arm the check when every context line is present as written, so a
+ * fuzzy model rewrite of that line can still stand.
+ *
+ * @param {string} originalContent
+ * @param {string} updatedContent
+ * @param {string} patch
+ * @returns {boolean}
+ */
+export function diffOutputViolatesIntent(originalContent: string, updatedContent: string, patch: string): boolean;
+/**
+ * Apply only the `+`/`-` lines of a patch, ignoring context lines that are
+ * not actually in the file.
+ *
+ * A context or `-` line may match with a uniform indentation shift, and the
+ * hunk may sit somewhere other than the hunk header. Added lines are written
+ * at that same indent. When drifted context pairs a diff name with the
+ * file's own name (`user_id` in the diff, `uid` in the file), `+` lines are
+ * rewritten onto those names. Returns null when a `-` line cannot be found
+ * even then, when a pure insertion has no matching context to anchor it, or
+ * when a body line is ambiguous. Never writes a context line that was not
+ * already in the original.
+ *
+ * @param {string} originalContent
+ * @param {string} patch
+ * @returns {string | null}
+ */
+export function applyIntentIgnoringBadContext(originalContent: string, patch: string): string | null;
+/**
+ * Deterministic +/- apply that rewrote at least one added identifier onto
+ * a name the file already uses. Null when the hunk cannot be anchored or
+ * when no identifier changed, so the caller can still ask the model.
+ *
+ * @param {string} originalContent
+ * @param {string} patch
+ * @returns {string | null}
+ */
+export function applyAdaptedIdentifiers(originalContent: string, patch: string): string | null;

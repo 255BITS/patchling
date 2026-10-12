@@ -134,6 +134,16 @@ export function callLlmForApplyWithThink(filePath: string, originalContent: stri
  * resolution. Set `opts.forceLlm` to skip the deterministic fast path and send
  * every file to the LLM.
  *
+ * When the diff's context lines are not in the file, the model result is
+ * checked against the diff's `+`/`-` lines. An indentation shift, or a hunk
+ * that matches somewhere other than its `@@` line, still counts as context.
+ * A diff name that pairs with a different name already in the file
+ * (`user_id` beside `uid`) is rewritten onto the file's name before any
+ * model call. A result that copies stale context, deletes any other line,
+ * or is empty is discarded. The same edit is then replayed from the `+`/`-`
+ * lines (at the file's indent, with those names); if that cannot be done
+ * without guessing, this throws instead of writing the file.
+ *
  * @param {string} diffText
  * @param {Record<string, string>} files
  * @param {object} [opts]

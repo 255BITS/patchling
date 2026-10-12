@@ -35,6 +35,7 @@
     "prepublishOnly": "npm test",
     "test": "node --test",
     "test:live": "GPTDIFF_LIVE=1 node --test test/live.test.js",
+    "test:live:llm": "LIVE_LLM=1 node --test test/live-smartapply.test.js",
     "benchmark": "node benchmark/run.js",
     "types": "rm -f src/*.d.ts && tsc -p tsconfig.json"
   },
