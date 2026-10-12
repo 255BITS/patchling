@@ -135,10 +135,12 @@ export function callLlmForApplyWithThink(filePath: string, originalContent: stri
  * every file to the LLM.
  *
  * When the diff's context lines are not in the file, the model result is
- * checked against the diff's `+`/`-` lines. A result that copies stale context
- * or edits any other line is discarded. The same edit is then replayed from
- * the `+`/`-` lines alone; if that cannot be done without guessing, this
- * throws instead of writing the file.
+ * checked against the diff's `+`/`-` lines. An indentation shift, or a hunk
+ * that matches somewhere other than its `@@` line, still counts as context.
+ * A result that copies stale context, deletes any other line, or is empty
+ * is discarded. The same edit is then replayed from the `+`/`-` lines (at
+ * the file's indent); if that cannot be done without guessing, this throws
+ * instead of writing the file.
  *
  * @param {string} diffText
  * @param {Record<string, string>} files

@@ -60,11 +60,17 @@ export function parsePatchHunks(patch: string): Array<{
  * Whether `updatedContent` does something other than apply this diff's
  * `+`/`-` lines to `originalContent`.
  *
- * Armed only when a context line does not occur anywhere in the original
- * file — the case where a model copies the diff's stale context in, or drops
- * lines the hunk never removed. A `-` line that merely fails to match
- * (quotes, whitespace) does not arm the check, so a fuzzy model rewrite of
- * that line can still stand.
+ * Armed when a context line does not occur anywhere in the original file —
+ * the case where a model copies the diff's stale context in, or drops lines
+ * the hunk never removed. A context line that differs only by a uniform
+ * indentation shift, or a hunk that matches somewhere other than its `@@`
+ * line, still counts as context: the edit is accepted at the file's indent.
+ * A result that deletes any other line, or an empty rewrite of a non-empty
+ * file, is still a violation.
+ *
+ * A `-` line that merely fails to match (quotes, whitespace) does not by
+ * itself arm the check when every context line is present as written, so a
+ * fuzzy model rewrite of that line can still stand.
  *
  * @param {string} originalContent
  * @param {string} updatedContent
@@ -76,9 +82,12 @@ export function diffOutputViolatesIntent(originalContent: string, updatedContent
  * Apply only the `+`/`-` lines of a patch, ignoring context lines that are
  * not actually in the file.
  *
- * Returns null when a `-` line cannot be found, when a pure insertion has no
- * matching context to anchor it, or when a body line is ambiguous. Never
- * writes a context line that was not already in the original.
+ * A context or `-` line may match with a uniform indentation shift, and the
+ * hunk may sit somewhere other than the `@@` line. Added lines are written
+ * at that same indent. Returns null when a `-` line cannot be found even
+ * then, when a pure insertion has no matching context to anchor it, or when
+ * a body line is ambiguous. Never writes a context line that was not already
+ * in the original.
  *
  * @param {string} originalContent
  * @param {string} patch

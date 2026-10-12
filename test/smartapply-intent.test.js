@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { smartapply, applyDiff, callLlmForApply } from '../src/index.js';
+import { diffOutputViolatesIntent } from '../src/applydiff.js';
 import { gradeSmartapplyCase } from './grade-smartapply-case.js';
 
 const cases = JSON.parse(
@@ -39,8 +40,12 @@ function corruptApply(fileDiff) {
 }
 
 test('mocked LLM: harness cases stay correct even when the model copies bad context', async () => {
-  const needsLlm = new Set(['sloppy_wrong_context', 'sloppy_ellipsis']);
+  // hard_renamed_fn / hard_drifted_js need a model that adapts names and
+  // anchors; a context-copy cannot be repaired into the graded file.
+  const needsLlm = new Set(['sloppy_wrong_context', 'sloppy_ellipsis', 'hard_moved_block']);
+  const semantic = new Set(['hard_renamed_fn', 'hard_drifted_js']);
   for (const c of cases) {
+    if (semantic.has(c.id)) continue;
     let calls = 0;
     const mock = async (_path, _original, fileDiff) => {
       calls += 1;
@@ -161,4 +166,125 @@ test('apply prompt tells the model that only +/- lines may change', async () => 
   assert.match(user, /Apply only the '-' and '\+' lines/);
   assert.match(user, /RETRIES = 5/);
   assert.match(user, /Diff to apply/);
+});
+
+test('hard_moved_block: indent-shifted class method is accepted, not refused', async () => {
+  const c = cases.find((item) => item.id === 'hard_moved_block');
+  const original = c.files['calc.py'];
+  // What every live model actually returns: the free function is the method,
+  // the @@ header is past EOF, and the changed line keeps the file's indent.
+  const corrected = original.replace(
+    's += it.price * it.qty',
+    "s += it.price * it.qty * (1 - getattr(it, 'discount', 0))",
+  );
+  assert.equal(diffOutputViolatesIntent(original, corrected, c.diff), false);
+  const result = await smartapply(c.diff, c.files, {
+    callLlmForApply: async () => corrected,
+  });
+  assert.equal(gradeSmartapplyCase(result, c), '');
+  assert.ok(result['calc.py'].includes("            s += it.price * it.qty * (1 - getattr(it, 'discount', 0))"));
+  assert.ok(result['calc.py'].includes('def total(self, items)'));
+  assert.ok(!result['calc.py'].includes('def total(items)'));
+  assert.equal(result['calc.py'], corrected.trim());
+});
+
+test('hard_moved_block: a relocated hunk is replayed at the method indent', async () => {
+  const c = cases.find((item) => item.id === 'hard_moved_block');
+  const result = await smartapply(c.diff, c.files, {
+    callLlmForApply: async (_path, _original, fileDiff) => corruptApply(fileDiff),
+  });
+  assert.equal(gradeSmartapplyCase(result, c), '');
+  const got = result['calc.py'];
+  assert.ok(got.includes('def total(self, items)'));
+  assert.ok(got.includes('s = 0.0'));
+  assert.ok(got.includes('self.history.append(s)'));
+  assert.ok(got.includes('return round(s, self.precision)'));
+  assert.ok(got.includes('def clear(self):'));
+  assert.ok(!got.includes('def total(items)'));
+  assert.ok(!got.includes('return s\n') && !got.endsWith('return s'));
+});
+
+test('hard_moved_block: deleting unrelated lines is still a violation', async () => {
+  const c = cases.find((item) => item.id === 'hard_moved_block');
+  const original = c.files['calc.py'];
+  const dropped = original
+    .replace(
+      's += it.price * it.qty',
+      "s += it.price * it.qty * (1 - getattr(it, 'discount', 0))",
+    )
+    .replace(/\n\n    def clear\(self\):\n        self\.history = \[\]\n?$/, '\n');
+  assert.ok(!dropped.includes('def clear(self)'), 'fixture drops the unrelated method');
+  assert.equal(diffOutputViolatesIntent(original, dropped, c.diff), true);
+  const result = await smartapply(c.diff, c.files, {
+    callLlmForApply: async () => dropped,
+  });
+  assert.ok(result['calc.py'].includes('def clear(self):'));
+  assert.ok(result['calc.py'].includes('self.history.append(s)'));
+  assert.ok(result['calc.py'].includes("(1 - getattr(it, 'discount', 0))"));
+  assert.equal(c.files['calc.py'], original);
+});
+
+test('hard_moved_block: empty model output is still a violation', async () => {
+  const c = cases.find((item) => item.id === 'hard_moved_block');
+  const original = c.files['calc.py'];
+  assert.equal(diffOutputViolatesIntent(original, '', c.diff), true);
+  assert.equal(diffOutputViolatesIntent(original, '   \n', c.diff), true);
+  const result = await smartapply(c.diff, c.files, {
+    callLlmForApply: async () => '',
+  });
+  assert.ok(result['calc.py'].trim().length > 0);
+  assert.equal(gradeSmartapplyCase(result, c), '');
+  assert.equal(c.files['calc.py'], original);
+});
+
+test('refuses empty output when the diff cannot be anchored', async () => {
+  const diff = [
+    '--- a/f.py',
+    '+++ b/f.py',
+    '@@ -1,2 +1,2 @@',
+    ' NOT_A_REAL_LINE',
+    '-no_such_line',
+    '+added',
+  ].join('\n');
+  const files = { 'f.py': 'alpha\nbeta\n' };
+  await assert.rejects(
+    () => smartapply(diff, files, { callLlmForApply: async () => '' }),
+    /did not add or remove/,
+  );
+  assert.equal(files['f.py'], 'alpha\nbeta\n');
+});
+
+test('hard_drifted_js: an exact insertion into the real handler is kept', async () => {
+  const c = cases.find((item) => item.id === 'hard_drifted_js');
+  const original = c.files['server.js'];
+  const insertion = [
+    '  if (!user) {',
+    "    return res.status(404).json({ error: 'not found' })",
+    '  }',
+  ].join('\n');
+  const corrected = original.replace('  res.json(user);', `${insertion}\n  res.json(user);`);
+  assert.equal(diffOutputViolatesIntent(original, corrected, c.diff), false);
+  const result = await smartapply(c.diff, c.files, {
+    callLlmForApply: async () => corrected,
+  });
+  assert.equal(gradeSmartapplyCase(result, c), '');
+  assert.ok(result['server.js'].includes('await db.find(req.params.id)'));
+  assert.ok(result['server.js'].includes("'/users/:id'"));
+});
+
+test('hard_renamed_fn: copying the diff\'s renamed function is not written over the file', async () => {
+  const c = cases.find((item) => item.id === 'hard_renamed_fn');
+  const original = c.files['svc.py'];
+  const result = await smartapply(c.diff, c.files, {
+    callLlmForApply: async (_path, _original, fileDiff) => corruptApply(fileDiff),
+  });
+  const got = result['svc.py'];
+  assert.ok(got.includes('def fetch_user_record(uid, db):'));
+  assert.ok(got.includes("log.warning('missing %s', uid)"));
+  assert.ok(got.includes('def keep_me():'));
+  assert.ok(got.includes("return 'kept'"));
+  assert.ok(!got.includes('def get_user'));
+  assert.ok(!got.includes('database.get'));
+  assert.ok(got.includes('raise KeyError'));
+  assert.equal(c.files['svc.py'], original);
 });

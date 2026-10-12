@@ -518,14 +518,372 @@ function isPlusMinusEdit(originalLines, updatedLines, delCounts, addCounts) {
 }
 
 /**
+ * @param {string} text
+ * @returns {string}
+ */
+function leadingWhitespace(text) {
+  const m = /^[ \t]*/.exec(text);
+  return m ? m[0] : '';
+}
+
+/**
+ * Move `text` by `delta` leading spaces. A negative delta only strips spaces,
+ * never tabs. Returns null when the line is not indented far enough.
+ *
+ * @param {string} text
+ * @param {number} delta
+ * @returns {string | null}
+ */
+function shiftIndent(text, delta) {
+  if (!delta) return text;
+  if (delta > 0) return `${' '.repeat(delta)}${text}`;
+  const remove = -delta;
+  const ws = leadingWhitespace(text);
+  if (ws.length < remove || ws.slice(0, remove).includes('\t')) return null;
+  return text.slice(remove);
+}
+
+/**
+ * Indent deltas at which a context or deletion line equals some file line.
+ * `0` is always included so an exact hunk keeps its current anchor.
+ *
+ * @param {Array<{ kind: string, text: string }>} ops
+ * @param {string[]} fileLines
+ * @returns {number[]}
+ */
+function candidateDeltas(ops, fileLines) {
+  /** @type {Set<number>} */
+  const deltas = new Set([0]);
+  /** @type {Map<string, string[]>} */
+  const linesByBody = new Map();
+  for (const line of fileLines) {
+    const body = line.replace(/^[ \t]*/, '');
+    if (!linesByBody.has(body)) linesByBody.set(body, []);
+    linesByBody.get(body).push(line);
+  }
+  for (const op of ops) {
+    if (op.kind === 'add') continue;
+    const body = op.text.replace(/^[ \t]*/, '');
+    const lines = linesByBody.get(body);
+    if (!lines) continue;
+    const opWs = leadingWhitespace(op.text).length;
+    for (const line of lines) {
+      const delta = leadingWhitespace(line).length - opWs;
+      if (shiftIndent(op.text, delta) === line) deltas.add(delta);
+    }
+  }
+  return [...deltas];
+}
+
+/**
+ * @param {string} content
+ * @returns {boolean}
+ */
+function isBlank(content) {
+  return !/\S/.test(content || '');
+}
+
+/**
+ * True when `updatedLines` is not `originalLines` with only the budgeted
+ * deletions removed and the budgeted additions inserted.
+ *
+ * @param {string[]} originalLines
+ * @param {string[]} updatedLines
+ * @param {Map<string, number>} delCounts
+ * @param {Map<string, number>} addCounts
+ * @returns {boolean}
+ */
+function editViolates(originalLines, updatedLines, delCounts, addCounts) {
+  if (!isPlusMinusEdit(originalLines, updatedLines, delCounts, addCounts)) return true;
+  const origCounts = lineCounts(originalLines);
+  const updCounts = lineCounts(updatedLines);
+  for (const [text, n] of delCounts) {
+    if (addCounts.has(text)) continue;
+    const have = origCounts.get(text) || 0;
+    if (have === 0) continue;
+    const left = updCounts.get(text) || 0;
+    if (left > have - Math.min(have, n)) return true;
+  }
+  for (const [text, n] of addCounts) {
+    if (delCounts.has(text)) continue;
+    const have = origCounts.get(text) || 0;
+    const got = updCounts.get(text) || 0;
+    if (got < have + n) return true;
+  }
+  return false;
+}
+
+/**
+ * Best `+`/`-` alignment of one hunk against `fileLines`, starting at `start`.
+ *
+ * Context ops may be skipped when they do not equal the current file line, so
+ * a stale context line is never written. `delta` is a uniform leading-space
+ * shift: a diff line matches the file line `delta` spaces deeper (or shallower).
+ * File lines inside the matched span are only kept (matched context) or dropped
+ * (a `-` line). Added lines are emitted at that same shift.
+ *
+ * @param {Array<{ kind: string, text: string }>} ops
+ * @param {string[]} fileLines
+ * @param {number} start
+ * @param {number} delta
+ * @returns {{ matchedContext: number, end: number, replacement: string[], removed: string[], added: string[] } | null}
+ */
+function alignHunkAt(ops, fileLines, start, delta) {
+  const consumable = ops.reduce((n, op) => n + (op.kind === 'add' ? 0 : 1), 0);
+  const last = Math.min(fileLines.length, start + consumable);
+  /** @type {Map<number, { matchedContext: number, end: number, replacement: string[], removed: string[], added: string[] } | null>} */
+  const memo = new Map();
+  const width = fileLines.length + 1;
+
+  /**
+   * @param {number} opIdx
+   * @param {number} i
+   * @returns {{ matchedContext: number, end: number, replacement: string[], removed: string[], added: string[] } | null}
+   */
+  const rec = (opIdx, i) => {
+    const key = opIdx * width + i;
+    if (memo.has(key)) return memo.get(key) ?? null;
+    /** @type {{ matchedContext: number, end: number, replacement: string[], removed: string[], added: string[] } | null} */
+    let result = null;
+    if (opIdx === ops.length) {
+      result = { matchedContext: 0, end: i, replacement: [], removed: [], added: [] };
+    } else if (i > last) {
+      result = null;
+    } else {
+      const op = ops[opIdx];
+      if (op.kind === 'add') {
+        const addedText = shiftIndent(op.text, delta);
+        const rest = addedText === null ? null : rec(opIdx + 1, i);
+        if (rest && addedText !== null) {
+          result = {
+            matchedContext: rest.matchedContext,
+            end: rest.end,
+            replacement: [addedText, ...rest.replacement],
+            removed: rest.removed,
+            added: [addedText, ...rest.added],
+          };
+        }
+      } else if (op.kind === 'del') {
+        const shifted = shiftIndent(op.text, delta);
+        if (shifted !== null && i < last && i < fileLines.length && fileLines[i] === shifted) {
+          const rest = rec(opIdx + 1, i + 1);
+          if (rest) {
+            result = {
+              matchedContext: rest.matchedContext,
+              end: rest.end,
+              replacement: rest.replacement,
+              removed: [fileLines[i], ...rest.removed],
+              added: rest.added,
+            };
+          }
+        }
+      } else {
+        const skipped = rec(opIdx + 1, i);
+        /** @type {{ matchedContext: number, end: number, replacement: string[], removed: string[], added: string[] } | null} */
+        let matched = null;
+        const shifted = shiftIndent(op.text, delta);
+        if (shifted !== null && i < last && i < fileLines.length && fileLines[i] === shifted) {
+          const rest = rec(opIdx + 1, i + 1);
+          if (rest) {
+            matched = {
+              matchedContext: rest.matchedContext + 1,
+              end: rest.end,
+              replacement: [fileLines[i], ...rest.replacement],
+              removed: rest.removed,
+              added: rest.added,
+            };
+          }
+        }
+        if (matched && skipped) {
+          result = matched.matchedContext >= skipped.matchedContext ? matched : skipped;
+        } else {
+          result = matched || skipped;
+        }
+      }
+    }
+    memo.set(key, result);
+    return result;
+  };
+
+  return rec(0, start);
+}
+
+/**
+ * @param {{ matchedContext: number, start: number, delta: number }} candidate
+ * @param {{ matchedContext: number, start: number, delta: number }} best
+ * @param {number} hint
+ * @returns {boolean}
+ */
+function betterAlignment(candidate, best, hint) {
+  // A literal (delta 0) alignment wins outright, so an exact `-` line keeps
+  // the anchor it had before indent-shifted matches existed.
+  if ((candidate.delta === 0) !== (best.delta === 0)) return candidate.delta === 0;
+  if (candidate.matchedContext !== best.matchedContext) {
+    return candidate.matchedContext > best.matchedContext;
+  }
+  const candidateDist = Math.abs(candidate.start - hint);
+  const bestDist = Math.abs(best.start - hint);
+  if (candidateDist !== bestDist) return candidateDist < bestDist;
+  return candidate.start < best.start;
+}
+
+/**
+ * @param {Array<{ kind: string, text: string }>} ops
+ * @param {string[]} fileLines
+ * @param {number} cursor
+ * @param {number} hint
+ * @returns {{
+ *   skip: boolean,
+ *   start: number,
+ *   end: number,
+ *   replacement: string[],
+ *   removed: string[],
+ *   added: string[],
+ *   matchedContext: number,
+ *   delta: number,
+ *   relocated: boolean,
+ * } | null}
+ */
+function locateHunk(ops, fileLines, cursor, hint) {
+  const nDel = ops.reduce((n, op) => n + (op.kind === 'del' ? 1 : 0), 0);
+  const nAdd = ops.reduce((n, op) => n + (op.kind === 'add' ? 1 : 0), 0);
+  const nCtx = ops.reduce((n, op) => n + (op.kind === 'context' ? 1 : 0), 0);
+  if (nDel === 0 && nAdd === 0) {
+    return {
+      skip: true,
+      start: cursor,
+      end: cursor,
+      replacement: [],
+      removed: [],
+      added: [],
+      matchedContext: 0,
+      delta: 0,
+      relocated: false,
+    };
+  }
+  // Pure insertion with no context: the @@ hint is the only anchor.
+  if (nDel === 0 && nCtx === 0) {
+    const at = Math.min(Math.max(hint, cursor), fileLines.length);
+    const added = ops.filter((op) => op.kind === 'add').map((op) => op.text);
+    return {
+      skip: false,
+      start: at,
+      end: at,
+      replacement: added,
+      removed: [],
+      added,
+      matchedContext: 0,
+      delta: 0,
+      relocated: false,
+    };
+  }
+
+  /** @type {{ start: number, end: number, replacement: string[], removed: string[], added: string[], matchedContext: number, delta: number } | null} */
+  let best = null;
+  for (const delta of candidateDeltas(ops, fileLines)) {
+    /** @type {number[]} */
+    const starts = [];
+    for (let s = cursor; s < fileLines.length; s++) {
+      for (const op of ops) {
+        if (op.kind === 'add') continue;
+        const shifted = shiftIndent(op.text, delta);
+        if (shifted !== null && fileLines[s] === shifted) {
+          starts.push(s);
+          break;
+        }
+      }
+    }
+    if (nAdd > 0) starts.push(fileLines.length);
+
+    for (const start of starts) {
+      const found = alignHunkAt(ops, fileLines, start, delta);
+      if (!found || found.end < start) continue;
+      const candidate = {
+        start,
+        end: found.end,
+        replacement: found.replacement,
+        removed: found.removed,
+        added: found.added,
+        matchedContext: found.matchedContext,
+        delta,
+      };
+      if (!best || betterAlignment(candidate, best, hint)) best = candidate;
+    }
+  }
+
+  if (!best) return null;
+  // A pure insertion whose context matched nothing has no safe anchor.
+  if (nDel === 0 && best.matchedContext === 0 && nCtx > 0) return null;
+  return { skip: false, ...best, relocated: best.start !== hint };
+}
+
+/**
+ * Replay a patch's `+`/`-` lines, allowing one indent shift per hunk and a
+ * match away from the hunk header.
+ *
+ * @param {string} originalContent
+ * @param {string[]} originalLines
+ * @param {Array<{ hint: number, ops: Array<{ kind: string, text: string }> }>} hunks
+ * @returns {{ content: string, delCounts: Map<string, number>, addCounts: Map<string, number>, shifted: boolean, relocated: boolean } | null}
+ */
+function walkIntent(originalContent, originalLines, hunks) {
+  const originalNoTrailingNewline =
+    !!originalContent && originalContent.length > 0 && !/[\n\r]$/.test(originalContent);
+  let endsWithoutNewline = false;
+  /** @type {string[]} */
+  const newLines = [];
+  let cursor = 0;
+  /** @type {Map<string, number>} */
+  const delCounts = new Map();
+  /** @type {Map<string, number>} */
+  const addCounts = new Map();
+  let shifted = false;
+  let relocated = false;
+
+  const pushOriginal = (k) => {
+    newLines.push(originalLines[k]);
+    endsWithoutNewline = k === originalLines.length - 1 && originalNoTrailingNewline;
+  };
+  const bump = (map, text) => map.set(text, (map.get(text) || 0) + 1);
+
+  for (const hunk of hunks) {
+    const located = locateHunk(hunk.ops, originalLines, cursor, hunk.hint);
+    if (!located) return null;
+    if (located.skip) continue;
+    if (located.delta) shifted = true;
+    if (located.relocated) relocated = true;
+    for (let k = cursor; k < located.start; k++) pushOriginal(k);
+    for (const line of located.removed) bump(delCounts, line);
+    for (const line of located.added) bump(addCounts, line);
+    for (const line of located.replacement) {
+      newLines.push(line);
+      endsWithoutNewline = false;
+    }
+    cursor = located.end;
+  }
+
+  for (let k = cursor; k < originalLines.length; k++) pushOriginal(k);
+
+  let content = newLines.join('\n');
+  if (content && !endsWithoutNewline) content += '\n';
+  return { content, delCounts, addCounts, shifted, relocated };
+}
+
+/**
  * Whether `updatedContent` does something other than apply this diff's
  * `+`/`-` lines to `originalContent`.
  *
- * Armed only when a context line does not occur anywhere in the original
- * file — the case where a model copies the diff's stale context in, or drops
- * lines the hunk never removed. A `-` line that merely fails to match
- * (quotes, whitespace) does not arm the check, so a fuzzy model rewrite of
- * that line can still stand.
+ * Armed when a context line does not occur anywhere in the original file —
+ * the case where a model copies the diff's stale context in, or drops lines
+ * the hunk never removed. A context line that differs only by a uniform
+ * indentation shift, or a hunk that matches somewhere other than its `@@`
+ * line, still counts as context: the edit is accepted at the file's indent.
+ * A result that deletes any other line, or an empty rewrite of a non-empty
+ * file, is still a violation.
+ *
+ * A `-` line that merely fails to match (quotes, whitespace) does not by
+ * itself arm the check when every context line is present as written, so a
+ * fuzzy model rewrite of that line can still stand.
  *
  * @param {string} originalContent
  * @param {string} updatedContent
@@ -555,110 +913,35 @@ export function diffOutputViolatesIntent(originalContent, updatedContent, patch)
       }
     }
   }
-  if (!badContext) return false;
-  if (!isPlusMinusEdit(originalLines, updatedLines, delCounts, addCounts)) return true;
 
-  const origCounts = lineCounts(originalLines);
-  const updCounts = lineCounts(updatedLines);
-  for (const [text, n] of delCounts) {
-    if (addCounts.has(text)) continue;
-    const have = origCounts.get(text) || 0;
-    if (have === 0) continue;
-    const left = updCounts.get(text) || 0;
-    if (left > have - Math.min(have, n)) return true;
-  }
-  for (const [text, n] of addCounts) {
-    if (delCounts.has(text)) continue;
-    const have = origCounts.get(text) || 0;
-    const got = updCounts.get(text) || 0;
-    if (got < have + n) return true;
-  }
-  return false;
-}
+  const walked = walkIntent(originalContent, originalLines, hunks);
 
-/**
- * Best `+`/`-` alignment of one hunk against `fileLines`, starting at `start`.
- * Context ops may be skipped when they do not equal the current file line, so
- * a stale context line is never written. File lines inside the matched span
- * are only kept (matched context) or dropped (a `-` line).
- *
- * @param {Array<{ kind: string, text: string }>} ops
- * @param {string[]} fileLines
- * @param {number} start
- * @returns {{ matchedContext: number, end: number, replacement: string[] } | null}
- */
-function alignHunkAt(ops, fileLines, start) {
-  const consumable = ops.reduce((n, op) => n + (op.kind === 'add' ? 0 : 1), 0);
-  const last = Math.min(fileLines.length, start + consumable);
-  /** @type {Map<number, { matchedContext: number, end: number, replacement: string[] } | null>} */
-  const memo = new Map();
-  const width = fileLines.length + 1;
-
-  /**
-   * @param {number} opIdx
-   * @param {number} i
-   * @returns {{ matchedContext: number, end: number, replacement: string[] } | null}
-   */
-  const rec = (opIdx, i) => {
-    const key = opIdx * width + i;
-    if (memo.has(key)) return memo.get(key) ?? null;
-    /** @type {{ matchedContext: number, end: number, replacement: string[] } | null} */
-    let result = null;
-    if (opIdx === ops.length) {
-      result = { matchedContext: 0, end: i, replacement: [] };
-    } else if (i > last) {
-      result = null;
-    } else {
-      const op = ops[opIdx];
-      if (op.kind === 'add') {
-        const rest = rec(opIdx + 1, i);
-        if (rest) {
-          result = {
-            matchedContext: rest.matchedContext,
-            end: rest.end,
-            replacement: [op.text, ...rest.replacement],
-          };
-        }
-      } else if (op.kind === 'del') {
-        if (i < last && i < fileLines.length && fileLines[i] === op.text) {
-          const rest = rec(opIdx + 1, i + 1);
-          if (rest) result = rest;
-        }
-      } else {
-        const skipped = rec(opIdx + 1, i);
-        /** @type {{ matchedContext: number, end: number, replacement: string[] } | null} */
-        let matched = null;
-        if (i < last && i < fileLines.length && fileLines[i] === op.text) {
-          const rest = rec(opIdx + 1, i + 1);
-          if (rest) {
-            matched = {
-              matchedContext: rest.matchedContext + 1,
-              end: rest.end,
-              replacement: [fileLines[i], ...rest.replacement],
-            };
-          }
-        }
-        if (matched && skipped) {
-          result = matched.matchedContext >= skipped.matchedContext ? matched : skipped;
-        } else {
-          result = matched || skipped;
-        }
-      }
+  // Empty output is not a successful apply unless the anchored edit itself
+  // deletes every remaining line and adds nothing.
+  if (isBlank(updatedContent) && !isBlank(originalContent)) {
+    if (walked && !editViolates(originalLines, updatedLines, walked.delCounts, walked.addCounts)) {
+      return false;
     }
-    memo.set(key, result);
-    return result;
-  };
+    return true;
+  }
 
-  return rec(0, start);
+  if (!badContext) return false;
+
+  // Indent-shifted or relocated hunk: only the file-side +/- edit is in bounds.
+  if (walked) return editViolates(originalLines, updatedLines, walked.delCounts, walked.addCounts);
+  return editViolates(originalLines, updatedLines, delCounts, addCounts);
 }
 
 /**
  * Apply only the `+`/`-` lines of a patch, ignoring context lines that are
  * not actually in the file.
  *
- * Returns null when a `-` line cannot be found, when a pure insertion has no
- * matching context to anchor it, or when a body line is ambiguous. Never
- * writes a context line that was not already in the original.
+ * A context or `-` line may match with a uniform indentation shift, and the
+ * hunk may sit somewhere other than the `@@` line. Added lines are written
+ * at that same indent. Returns null when a `-` line cannot be found even
+ * then, when a pure insertion has no matching context to anchor it, or when
+ * a body line is ambiguous. Never writes a context line that was not already
+ * in the original.
  *
  * @param {string} originalContent
  * @param {string} patch
@@ -667,90 +950,8 @@ function alignHunkAt(ops, fileLines, start) {
 export function applyIntentIgnoringBadContext(originalContent, patch) {
   const hunks = parsePatchHunks(patch);
   if (!hunks || hunks.length === 0) return null;
-
   const originalLines = splitLines(originalContent || '');
-  const originalNoTrailingNewline =
-    !!originalContent && originalContent.length > 0 && !/[\n\r]$/.test(originalContent);
-  let endsWithoutNewline = false;
-  /** @type {string[]} */
-  const newLines = [];
-  let cursor = 0;
-
-  const pushOriginal = (k) => {
-    newLines.push(originalLines[k]);
-    endsWithoutNewline = k === originalLines.length - 1 && originalNoTrailingNewline;
-  };
-
-  for (const hunk of hunks) {
-    const ops = hunk.ops;
-    const nDel = ops.reduce((n, op) => n + (op.kind === 'del' ? 1 : 0), 0);
-    const nAdd = ops.reduce((n, op) => n + (op.kind === 'add' ? 1 : 0), 0);
-    const nCtx = ops.reduce((n, op) => n + (op.kind === 'context' ? 1 : 0), 0);
-    if (nDel === 0 && nAdd === 0) continue;
-
-    /** @type {{ start: number, end: number, replacement: string[], matchedContext: number } | null} */
-    let best = null;
-    const needles = new Set();
-    for (const op of ops) {
-      if (op.kind === 'context' || op.kind === 'del') needles.add(op.text);
-    }
-    /** @type {number[]} */
-    const starts = [];
-    for (let s = cursor; s < originalLines.length; s++) {
-      if (needles.has(originalLines[s])) starts.push(s);
-    }
-    if (nAdd > 0) starts.push(originalLines.length);
-
-    for (const start of starts) {
-      const found = alignHunkAt(ops, originalLines, start);
-      if (!found || found.end < start) continue;
-      const candidate = {
-        start,
-        end: found.end,
-        replacement: found.replacement,
-        matchedContext: found.matchedContext,
-      };
-      if (!best) {
-        best = candidate;
-        continue;
-      }
-      const closer = Math.abs(candidate.start - hunk.hint) < Math.abs(best.start - hunk.hint);
-      const nearerTie =
-        Math.abs(candidate.start - hunk.hint) === Math.abs(best.start - hunk.hint) &&
-        candidate.start < best.start;
-      if (
-        candidate.matchedContext > best.matchedContext ||
-        (candidate.matchedContext === best.matchedContext && (closer || nearerTie))
-      ) {
-        best = candidate;
-      }
-    }
-
-    if (!best) return null;
-    // A pure insertion whose context matched nothing has no safe anchor.
-    // (`@@` hint insertion is left to the exact applier / the model.)
-    if (nDel === 0 && best.matchedContext === 0 && nCtx > 0) return null;
-    if (nDel === 0 && nCtx === 0) {
-      const at = Math.min(Math.max(hunk.hint, cursor), originalLines.length);
-      best = {
-        start: at,
-        end: at,
-        replacement: ops.filter((op) => op.kind === 'add').map((op) => op.text),
-        matchedContext: 0,
-      };
-    }
-
-    for (let k = cursor; k < best.start; k++) pushOriginal(k);
-    for (const line of best.replacement) {
-      newLines.push(line);
-      endsWithoutNewline = false;
-    }
-    cursor = best.end;
-  }
-
-  for (let k = cursor; k < originalLines.length; k++) pushOriginal(k);
-
-  let content = newLines.join('\n');
-  if (content && !endsWithoutNewline) content += '\n';
-  return content;
+  const walked = walkIntent(originalContent, originalLines, hunks);
+  if (!walked) return null;
+  return walked.content;
 }
