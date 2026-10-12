@@ -134,6 +134,12 @@ export function callLlmForApplyWithThink(filePath: string, originalContent: stri
  * resolution. Set `opts.forceLlm` to skip the deterministic fast path and send
  * every file to the LLM.
  *
+ * When the diff's context lines are not in the file, the model result is
+ * checked against the diff's `+`/`-` lines. A result that copies stale context
+ * or edits any other line is discarded. The same edit is then replayed from
+ * the `+`/`-` lines alone; if that cannot be done without guessing, this
+ * throws instead of writing the file.
+ *
  * @param {string} diffText
  * @param {Record<string, string>} files
  * @param {object} [opts]
