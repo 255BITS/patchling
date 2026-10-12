@@ -83,14 +83,26 @@ export function diffOutputViolatesIntent(originalContent: string, updatedContent
  * not actually in the file.
  *
  * A context or `-` line may match with a uniform indentation shift, and the
- * hunk may sit somewhere other than the `@@` line. Added lines are written
- * at that same indent. Returns null when a `-` line cannot be found even
- * then, when a pure insertion has no matching context to anchor it, or when
- * a body line is ambiguous. Never writes a context line that was not already
- * in the original.
+ * hunk may sit somewhere other than the hunk header. Added lines are written
+ * at that same indent. When drifted context pairs a diff name with the
+ * file's own name (`user_id` in the diff, `uid` in the file), `+` lines are
+ * rewritten onto those names. Returns null when a `-` line cannot be found
+ * even then, when a pure insertion has no matching context to anchor it, or
+ * when a body line is ambiguous. Never writes a context line that was not
+ * already in the original.
  *
  * @param {string} originalContent
  * @param {string} patch
  * @returns {string | null}
  */
 export function applyIntentIgnoringBadContext(originalContent: string, patch: string): string | null;
+/**
+ * Deterministic +/- apply that rewrote at least one added identifier onto
+ * a name the file already uses. Null when the hunk cannot be anchored or
+ * when no identifier changed, so the caller can still ask the model.
+ *
+ * @param {string} originalContent
+ * @param {string} patch
+ * @returns {string | null}
+ */
+export function applyAdaptedIdentifiers(originalContent: string, patch: string): string | null;

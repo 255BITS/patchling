@@ -285,6 +285,40 @@ test('hard_renamed_fn: copying the diff\'s renamed function is not written over 
   assert.ok(got.includes("return 'kept'"));
   assert.ok(!got.includes('def get_user'));
   assert.ok(!got.includes('database.get'));
-  assert.ok(got.includes('raise KeyError'));
+  assert.ok(got.includes('raise KeyError(uid)'));
+  assert.ok(!got.includes('user_id'));
   assert.equal(c.files['svc.py'], original);
+});
+
+test('hard_renamed_fn: diff identifiers are rewritten onto the file without a model call', async () => {
+  const c = cases.find((item) => item.id === 'hard_renamed_fn');
+  const original = c.files['svc.py'];
+  let calls = 0;
+  const result = await smartapply(c.diff, c.files, {
+    callLlmForApply: async () => {
+      calls += 1;
+      return 'def get_user(user_id, database):\n    raise KeyError(user_id)\n';
+    },
+  });
+  assert.equal(calls, 0);
+  assert.equal(gradeSmartapplyCase(result, c), '');
+  assert.equal(
+    result['svc.py'],
+    original.replace('        return None\n', '        raise KeyError(uid)\n'),
+  );
+  assert.equal(c.files['svc.py'], original);
+});
+
+test('hard_renamed_fn: a model that copies user_id verbatim is still rewritten to uid', async () => {
+  const c = cases.find((item) => item.id === 'hard_renamed_fn');
+  const original = c.files['svc.py'];
+  const verbatim = original.replace('        return None\n', '        raise KeyError(user_id)\n');
+  const result = await smartapply(c.diff, c.files, {
+    forceLlm: true,
+    callLlmForApply: async () => verbatim,
+  });
+  assert.equal(gradeSmartapplyCase(result, c), '');
+  assert.ok(result['svc.py'].includes('raise KeyError(uid)'));
+  assert.ok(!result['svc.py'].includes('user_id'));
+  assert.ok(!result['svc.py'].includes('def get_user'));
 });

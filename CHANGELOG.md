@@ -8,6 +8,7 @@ Not tagged and not published. `package.json` is `0.2.1`; the only release tag an
 
 - Refuse to write a model rewrite that copies a diff's stale context or edits any line the diff did not add or remove. When the context is wrong, replay only the `+`/`-` lines, and throw instead of guessing when those lines cannot be anchored.
 - Count a uniform indentation shift, and a hunk that matches somewhere other than its `@@` line, as context. A free function in the diff can land on the indented method it actually describes (`hard_moved_block`) without the intent guard discarding the file. Deleting an unrelated line, or returning an empty file, is still a violation.
+- Rewrite a diff's renamed identifiers onto the names the file already uses, so `raise KeyError(user_id)` lands as `raise KeyError(uid)` inside `fetch_user_record(uid, db)` without a model call.
 - NanoGPT cases, including the `hard_*` set, live in `test/fixtures/smartapply-live-cases.json` and run with `npm run test:live:llm` (`LIVE_LLM=1`). Mocked-LLM coverage keeps `npm test` offline.
 
 ### Applying diffs

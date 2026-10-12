@@ -9,6 +9,7 @@
 import {
   parseDiffPerFile,
   applyPatchToFile,
+  applyAdaptedIdentifiers,
   applyIntentIgnoringBadContext,
   diffOutputViolatesIntent,
 } from './applydiff.js';
@@ -306,10 +307,12 @@ export async function callLlmForApplyWithThink(filePath, originalContent, fileDi
  * When the diff's context lines are not in the file, the model result is
  * checked against the diff's `+`/`-` lines. An indentation shift, or a hunk
  * that matches somewhere other than its `@@` line, still counts as context.
- * A result that copies stale context, deletes any other line, or is empty
- * is discarded. The same edit is then replayed from the `+`/`-` lines (at
- * the file's indent); if that cannot be done without guessing, this throws
- * instead of writing the file.
+ * A diff name that pairs with a different name already in the file
+ * (`user_id` beside `uid`) is rewritten onto the file's name before any
+ * model call. A result that copies stale context, deletes any other line,
+ * or is empty is discarded. The same edit is then replayed from the `+`/`-`
+ * lines (at the file's indent, with those names); if that cannot be done
+ * without guessing, this throws instead of writing the file.
  *
  * @param {string} diffText
  * @param {Record<string, string>} files
@@ -347,8 +350,12 @@ export async function smartapply(diffText, files, opts = {}) {
         return;
       }
       // Fast path: try to apply the patch deterministically, no LLM call.
+      // A clean hunk wins first. A rename that the diff's context already
+      // reveals (`user_id` in the hunk, `uid` in the file) is applied from
+      // the +/- lines alone, so the model cannot leave the diff's name behind.
       if (!opts.forceLlm) {
-        const deterministic = applyPatchToFile(original, patch);
+        const deterministic = applyPatchToFile(original, patch)
+          ?? applyAdaptedIdentifiers(original, patch);
         if (deterministic !== null) {
           result[path] = deterministic;
           return;

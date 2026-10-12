@@ -593,6 +593,171 @@ function isBlank(content) {
  * @param {Map<string, number>} addCounts
  * @returns {boolean}
  */
+const IDENT_PAIR_MIN = 0.55;
+
+/**
+ * @param {string} text
+ * @returns {boolean}
+ */
+function isEllipsis(text) {
+  const trimmed = String(text || '').trim();
+  return trimmed === '...' || trimmed === '…' || trimmed === '....' || trimmed === '..';
+}
+
+/**
+ * Identity ignoring whitespace and trailing semicolons. Case-sensitive, so
+ * `False` and `false` stay different.
+ *
+ * @param {string} line
+ * @returns {string}
+ */
+function trivialKey(line) {
+  let collapsed = String(line || '').replace(/\s+/g, '');
+  while (collapsed.endsWith(';')) collapsed = collapsed.slice(0, -1);
+  return collapsed;
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+function sameTrivial(a, b) {
+  return a === b || trivialKey(a) === trivialKey(b);
+}
+
+/**
+ * Ratcliff/Obershelp match size, the same ratio basis as Python's
+ * difflib.SequenceMatcher for short lines (no autojunk).
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function matchingSize(a, b) {
+  if (!a.length || !b.length) return 0;
+  let bestLen = 0;
+  let bestI = 0;
+  let bestJ = 0;
+  const cols = b.length;
+  let prev = new Uint32Array(cols + 1);
+  let cur = new Uint32Array(cols + 1);
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= cols; j++) {
+      if (a.charCodeAt(i - 1) === b.charCodeAt(j - 1)) {
+        const len = prev[j - 1] + 1;
+        cur[j] = len;
+        if (len > bestLen) {
+          bestLen = len;
+          bestI = i - len;
+          bestJ = j - len;
+        }
+      } else {
+        cur[j] = 0;
+      }
+    }
+    const swap = prev;
+    prev = cur;
+    cur = swap;
+    cur.fill(0);
+  }
+  if (bestLen === 0) return 0;
+  return bestLen
+    + matchingSize(a.slice(0, bestI), b.slice(0, bestJ))
+    + matchingSize(a.slice(bestI + bestLen), b.slice(bestJ + bestLen));
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function sequenceRatio(a, b) {
+  const total = a.length + b.length;
+  if (total === 0) return 1;
+  return (2 * matchingSize(a, b)) / total;
+}
+
+/**
+ * @param {string} diffLine
+ * @param {string} fileLine
+ * @returns {number}
+ */
+function contextAnchorScore(diffLine, fileLine) {
+  if (sameTrivial(diffLine, fileLine)) return 1;
+  const left = trivialKey(diffLine);
+  const right = trivialKey(fileLine);
+  if (left.length < 4 || right.length < 4) return 0;
+  return sequenceRatio(left, right);
+}
+
+/**
+ * @param {string} text
+ * @returns {string[]}
+ */
+function identifiers(text) {
+  return String(text || '').match(/[A-Za-z_][A-Za-z0-9_]*/g) || [];
+}
+
+/**
+ * Map drifted diff identifiers onto the names the file actually uses.
+ *
+ * A context line pairs with a file line only when they are the best match
+ * near the edit and contain the same number of identifiers, so
+ * `database.get(user_id)` can teach `user_id` → `uid` without rewriting
+ * unrelated lines. Conflicting mappings are dropped.
+ *
+ * @param {string[]} lines
+ * @param {string[]} contexts
+ * @param {number} [start]
+ * @param {number} [end]
+ * @returns {Map<string, string>}
+ */
+function identMapForLines(lines, contexts, start = 0, end = lines.length) {
+  const from = Math.max(0, start);
+  const to = Math.min(lines.length, end);
+  /** @type {Map<string, string>} */
+  const mapping = new Map();
+  /** @type {Set<string>} */
+  const conflicts = new Set();
+  for (const text of contexts) {
+    if (isEllipsis(text)) continue;
+    let bestI = -1;
+    let bestS = IDENT_PAIR_MIN;
+    for (let i = from; i < to; i++) {
+      const score = contextAnchorScore(text, lines[i]);
+      if (score > bestS) {
+        bestS = score;
+        bestI = i;
+      }
+    }
+    if (bestI < 0) continue;
+    const diffIds = identifiers(text);
+    const fileIds = identifiers(lines[bestI]);
+    if (diffIds.length !== fileIds.length) continue;
+    for (let k = 0; k < diffIds.length; k++) {
+      const src = diffIds[k];
+      const dst = fileIds[k];
+      if (src === dst) continue;
+      const prev = mapping.get(src);
+      if (prev === undefined) mapping.set(src, dst);
+      else if (prev !== dst) conflicts.add(src);
+    }
+  }
+  for (const src of conflicts) mapping.delete(src);
+  return mapping;
+}
+
+/**
+ * @param {string} text
+ * @param {Map<string, string>} mapping
+ * @returns {string}
+ */
+function applyIdentMap(text, mapping) {
+  if (!mapping || mapping.size === 0) return text;
+  return text.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (id) => mapping.get(id) || id);
+}
+
 function editViolates(originalLines, updatedLines, delCounts, addCounts) {
   if (!isPlusMinusEdit(originalLines, updatedLines, delCounts, addCounts)) return true;
   const origCounts = lineCounts(originalLines);
@@ -626,27 +791,27 @@ function editViolates(originalLines, updatedLines, delCounts, addCounts) {
  * @param {string[]} fileLines
  * @param {number} start
  * @param {number} delta
- * @returns {{ matchedContext: number, end: number, replacement: string[], removed: string[], added: string[] } | null}
+ * @returns {{ matchedContext: number, end: number, replacement: string[], addFlags: boolean[], removed: string[], added: string[] } | null}
  */
 function alignHunkAt(ops, fileLines, start, delta) {
   const consumable = ops.reduce((n, op) => n + (op.kind === 'add' ? 0 : 1), 0);
   const last = Math.min(fileLines.length, start + consumable);
-  /** @type {Map<number, { matchedContext: number, end: number, replacement: string[], removed: string[], added: string[] } | null>} */
+  /** @type {Map<number, { matchedContext: number, end: number, replacement: string[], addFlags: boolean[], removed: string[], added: string[] } | null>} */
   const memo = new Map();
   const width = fileLines.length + 1;
 
   /**
    * @param {number} opIdx
    * @param {number} i
-   * @returns {{ matchedContext: number, end: number, replacement: string[], removed: string[], added: string[] } | null}
+   * @returns {{ matchedContext: number, end: number, replacement: string[], addFlags: boolean[], removed: string[], added: string[] } | null}
    */
   const rec = (opIdx, i) => {
     const key = opIdx * width + i;
     if (memo.has(key)) return memo.get(key) ?? null;
-    /** @type {{ matchedContext: number, end: number, replacement: string[], removed: string[], added: string[] } | null} */
+    /** @type {{ matchedContext: number, end: number, replacement: string[], addFlags: boolean[], removed: string[], added: string[] } | null} */
     let result = null;
     if (opIdx === ops.length) {
-      result = { matchedContext: 0, end: i, replacement: [], removed: [], added: [] };
+      result = { matchedContext: 0, end: i, replacement: [], addFlags: [], removed: [], added: [] };
     } else if (i > last) {
       result = null;
     } else {
@@ -659,6 +824,7 @@ function alignHunkAt(ops, fileLines, start, delta) {
             matchedContext: rest.matchedContext,
             end: rest.end,
             replacement: [addedText, ...rest.replacement],
+            addFlags: [true, ...rest.addFlags],
             removed: rest.removed,
             added: [addedText, ...rest.added],
           };
@@ -672,6 +838,7 @@ function alignHunkAt(ops, fileLines, start, delta) {
               matchedContext: rest.matchedContext,
               end: rest.end,
               replacement: rest.replacement,
+              addFlags: rest.addFlags,
               removed: [fileLines[i], ...rest.removed],
               added: rest.added,
             };
@@ -679,7 +846,7 @@ function alignHunkAt(ops, fileLines, start, delta) {
         }
       } else {
         const skipped = rec(opIdx + 1, i);
-        /** @type {{ matchedContext: number, end: number, replacement: string[], removed: string[], added: string[] } | null} */
+        /** @type {{ matchedContext: number, end: number, replacement: string[], addFlags: boolean[], removed: string[], added: string[] } | null} */
         let matched = null;
         const shifted = shiftIndent(op.text, delta);
         if (shifted !== null && i < last && i < fileLines.length && fileLines[i] === shifted) {
@@ -689,6 +856,7 @@ function alignHunkAt(ops, fileLines, start, delta) {
               matchedContext: rest.matchedContext + 1,
               end: rest.end,
               replacement: [fileLines[i], ...rest.replacement],
+              addFlags: [false, ...rest.addFlags],
               removed: rest.removed,
               added: rest.added,
             };
@@ -739,9 +907,11 @@ function betterAlignment(candidate, best, hint) {
  *   replacement: string[],
  *   removed: string[],
  *   added: string[],
+ *   addFlags: boolean[],
  *   matchedContext: number,
  *   delta: number,
  *   relocated: boolean,
+ *   adapted: boolean,
  * } | null}
  */
 function locateHunk(ops, fileLines, cursor, hint) {
@@ -756,12 +926,14 @@ function locateHunk(ops, fileLines, cursor, hint) {
       replacement: [],
       removed: [],
       added: [],
+      addFlags: [],
       matchedContext: 0,
       delta: 0,
       relocated: false,
+      adapted: false,
     };
   }
-  // Pure insertion with no context: the @@ hint is the only anchor.
+  // Pure insertion with no context: the hunk header is the only anchor.
   if (nDel === 0 && nCtx === 0) {
     const at = Math.min(Math.max(hint, cursor), fileLines.length);
     const added = ops.filter((op) => op.kind === 'add').map((op) => op.text);
@@ -772,13 +944,15 @@ function locateHunk(ops, fileLines, cursor, hint) {
       replacement: added,
       removed: [],
       added,
+      addFlags: added.map(() => true),
       matchedContext: 0,
       delta: 0,
       relocated: false,
+      adapted: false,
     };
   }
 
-  /** @type {{ start: number, end: number, replacement: string[], removed: string[], added: string[], matchedContext: number, delta: number } | null} */
+  /** @type {{ start: number, end: number, replacement: string[], addFlags: boolean[], removed: string[], added: string[], matchedContext: number, delta: number } | null} */
   let best = null;
   for (const delta of candidateDeltas(ops, fileLines)) {
     /** @type {number[]} */
@@ -802,6 +976,7 @@ function locateHunk(ops, fileLines, cursor, hint) {
         start,
         end: found.end,
         replacement: found.replacement,
+        addFlags: found.addFlags,
         removed: found.removed,
         added: found.added,
         matchedContext: found.matchedContext,
@@ -814,7 +989,39 @@ function locateHunk(ops, fileLines, cursor, hint) {
   if (!best) return null;
   // A pure insertion whose context matched nothing has no safe anchor.
   if (nDel === 0 && best.matchedContext === 0 && nCtx > 0) return null;
-  return { skip: false, ...best, relocated: best.start !== hint };
+  const adapted = adaptHunkAdditions(best, ops, fileLines);
+  return { skip: false, ...adapted, relocated: best.start !== hint };
+}
+
+/**
+ * Rewrite '+' lines when drifted context reveals a rename. File lines that
+ * were kept as context are not touched.
+ *
+ * @param {{ start: number, end: number, replacement: string[], addFlags: boolean[], removed: string[], added: string[], matchedContext: number, delta: number }} best
+ * @param {Array<{ kind: string, text: string }>} ops
+ * @param {string[]} fileLines
+ * @returns {{ start: number, end: number, replacement: string[], addFlags: boolean[], removed: string[], added: string[], matchedContext: number, delta: number, adapted: boolean }}
+ */
+function adaptHunkAdditions(best, ops, fileLines) {
+  /** @type {string[]} */
+  const contexts = [];
+  for (const op of ops) {
+    if (op.kind === 'context' && !isEllipsis(op.text)) contexts.push(op.text);
+  }
+  const mapping = identMapForLines(fileLines, contexts, best.start - 40, best.end + 40);
+  if (mapping.size === 0) return { ...best, adapted: false };
+  /** @type {string[]} */
+  const added = [];
+  let adapted = false;
+  const flags = best.addFlags || [];
+  const replacement = best.replacement.map((line, i) => {
+    if (!flags[i]) return line;
+    const next = applyIdentMap(line, mapping);
+    if (next !== line) adapted = true;
+    added.push(next);
+    return next;
+  });
+  return { ...best, replacement, added, adapted };
 }
 
 /**
@@ -824,7 +1031,7 @@ function locateHunk(ops, fileLines, cursor, hint) {
  * @param {string} originalContent
  * @param {string[]} originalLines
  * @param {Array<{ hint: number, ops: Array<{ kind: string, text: string }> }>} hunks
- * @returns {{ content: string, delCounts: Map<string, number>, addCounts: Map<string, number>, shifted: boolean, relocated: boolean } | null}
+ * @returns {{ content: string, delCounts: Map<string, number>, addCounts: Map<string, number>, shifted: boolean, relocated: boolean, adapted: boolean } | null}
  */
 function walkIntent(originalContent, originalLines, hunks) {
   const originalNoTrailingNewline =
@@ -839,6 +1046,7 @@ function walkIntent(originalContent, originalLines, hunks) {
   const addCounts = new Map();
   let shifted = false;
   let relocated = false;
+  let adapted = false;
 
   const pushOriginal = (k) => {
     newLines.push(originalLines[k]);
@@ -852,6 +1060,7 @@ function walkIntent(originalContent, originalLines, hunks) {
     if (located.skip) continue;
     if (located.delta) shifted = true;
     if (located.relocated) relocated = true;
+    if (located.adapted) adapted = true;
     for (let k = cursor; k < located.start; k++) pushOriginal(k);
     for (const line of located.removed) bump(delCounts, line);
     for (const line of located.added) bump(addCounts, line);
@@ -866,7 +1075,7 @@ function walkIntent(originalContent, originalLines, hunks) {
 
   let content = newLines.join('\n');
   if (content && !endsWithoutNewline) content += '\n';
-  return { content, delCounts, addCounts, shifted, relocated };
+  return { content, delCounts, addCounts, shifted, relocated, adapted };
 }
 
 /**
@@ -937,11 +1146,13 @@ export function diffOutputViolatesIntent(originalContent, updatedContent, patch)
  * not actually in the file.
  *
  * A context or `-` line may match with a uniform indentation shift, and the
- * hunk may sit somewhere other than the `@@` line. Added lines are written
- * at that same indent. Returns null when a `-` line cannot be found even
- * then, when a pure insertion has no matching context to anchor it, or when
- * a body line is ambiguous. Never writes a context line that was not already
- * in the original.
+ * hunk may sit somewhere other than the hunk header. Added lines are written
+ * at that same indent. When drifted context pairs a diff name with the
+ * file's own name (`user_id` in the diff, `uid` in the file), `+` lines are
+ * rewritten onto those names. Returns null when a `-` line cannot be found
+ * even then, when a pure insertion has no matching context to anchor it, or
+ * when a body line is ambiguous. Never writes a context line that was not
+ * already in the original.
  *
  * @param {string} originalContent
  * @param {string} patch
@@ -953,5 +1164,23 @@ export function applyIntentIgnoringBadContext(originalContent, patch) {
   const originalLines = splitLines(originalContent || '');
   const walked = walkIntent(originalContent, originalLines, hunks);
   if (!walked) return null;
+  return walked.content;
+}
+
+/**
+ * Deterministic +/- apply that rewrote at least one added identifier onto
+ * a name the file already uses. Null when the hunk cannot be anchored or
+ * when no identifier changed, so the caller can still ask the model.
+ *
+ * @param {string} originalContent
+ * @param {string} patch
+ * @returns {string | null}
+ */
+export function applyAdaptedIdentifiers(originalContent, patch) {
+  const hunks = parsePatchHunks(patch);
+  if (!hunks || hunks.length === 0) return null;
+  const originalLines = splitLines(originalContent || '');
+  const walked = walkIntent(originalContent, originalLines, hunks);
+  if (!walked || !walked.adapted) return null;
   return walked.content;
 }
