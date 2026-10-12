@@ -240,6 +240,34 @@
   #modellist .price { color: var(--muted); white-space: nowrap; }
   #modellist .divider { font-size: .68rem; color: var(--muted); text-align: center; margin: .35rem 0; }
 
+  .filterbar { display: flex; flex-wrap: wrap; gap: .45rem .8rem; align-items: center; margin-top: .65rem; font-size: .82rem; }
+  .filterbar label { display: inline-flex; gap: .4rem; align-items: center; font-weight: 600; cursor: pointer; }
+  .filterbar .hint { color: var(--muted); font-size: .75rem; }
+  #filtermodelrow { margin-top: .15rem; }
+  #filtermodelpicker { display: none; margin-top: .45rem; border: 1px solid var(--line); border-radius: .55rem; padding: .6rem; background: var(--panel2); }
+  #filtermodelsearch { width: 100%; font: inherit; font-size: .82rem; padding: .4rem .6rem; border-radius: .45rem; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+  #filtermodelsearch:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  #filtermodellist { max-height: 200px; overflow: auto; margin-top: .4rem; }
+  #filtermodellist button {
+    display: flex; justify-content: space-between; gap: 1rem; width: 100%; text-align: left;
+    font: inherit; font-size: .78rem; padding: .3rem .5rem; border: 0; border-radius: .35rem;
+    background: none; color: var(--ink); cursor: pointer;
+  }
+  #filtermodellist button:hover, #filtermodellist button.sel { background: var(--accent-soft); }
+  #filtermodellist button.sel { font-weight: 700; }
+  #filtermodellist .price { color: var(--muted); white-space: nowrap; }
+  #decisionwrap { display: none; margin-top: .7rem; }
+  #decisionwrap .dlabel { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 700; display: block; margin-bottom: .15rem; }
+  #decisionwrap .dlabel span { text-transform: none; letter-spacing: 0; font-weight: 400; }
+  .drow { display: flex; flex-wrap: wrap; gap: .28rem .55rem; align-items: baseline; padding: .32rem 0; border-bottom: 1px solid var(--line); font-size: .78rem; }
+  .drow .why { color: var(--muted); flex: 1 1 12rem; }
+  .badge.yes { background: var(--add-bg); color: var(--add); }
+  .badge.no { background: var(--del-bg); color: var(--del); }
+  .badge.skip { background: var(--code-bg); color: var(--muted); }
+  button[data-sample] { white-space: normal; text-align: left; line-height: 1.35; width: 100%; justify-content: flex-start; }
+  button[data-sample].on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  #usage pre { white-space: pre-wrap; }
+
   /* ---------- built with it ---------- */
   .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .9rem; margin-top: 1.5rem; }
   .gcard {
@@ -320,6 +348,7 @@
   </a>
   <span class="spacer"></span>
   <a class="nl" href="#playground">Demo</a>
+  <a class="nl" href="#samples">Samples</a>
   <a class="nl" href="#built">Built with it</a>
   <a class="nl" href="#how">How it works</a>
   <a class="nl" href="#models">Any model</a>
@@ -352,7 +381,26 @@
         <input id="goal" aria-label="What should change? Plain English." />
         <button class="btn primary" id="run">▶ Run</button>
       </div>
+      <div class="filterbar">
+        <label for="filteron"><input type="checkbox" id="filteron" /> Relevance filter</label>
+        <span class="hint">Before the diff, a cheap model answers yes or no for each file. Binary files, lockfiles, and generated files are excluded. Oversized files are truncated for the check; a yes still sends the original text.</span>
+      </div>
+      <div class="modelrow" id="filtermodelrow" style="display:none">
+        <span style="color:var(--muted)">decision model</span>
+        <span class="mid mono" id="filtermodelname"></span>
+        <span class="mprice" id="filtermodelprice"></span>
+        <button type="button" id="filtermodelchange">change</button>
+      </div>
+      <div id="filtermodelpicker">
+        <input id="filtermodelsearch" class="mono" placeholder="cheap model id, or filter the list…" autocomplete="off" />
+        <div id="filtermodellist"></div>
+        <p class="authnote" style="margin-top:.35rem"><span id="filtermodelcount"></span> · Enter uses the exact text</p>
+      </div>
       <p id="status"><span class="spin">◐</span> <b id="phase">working…</b></p>
+      <div id="decisionwrap">
+        <span class="dlabel">which files are relevant <span id="filtersrc"></span></span>
+        <div id="decisionlist"></div>
+      </div>
       <p id="resetnote">Demo mode replays a pre-recorded reply, so the files and goal were reset to match. Use your own key below to transform your own edits.</p>
       <div id="diffwrap">
         <span class="dlabel">the diff the model wrote <span id="diffsrc"></span></span>
@@ -482,6 +530,85 @@ render(next); <span class="cmt">// your code decides what "apply" means</span></
   </div>
 </section>
 
+<section id="samples">
+  <p class="kicker">Sample projects</p>
+  <h2>A bigger directory, a smaller prompt.</h2>
+  <p class="lead">These three projects are bundled in this page — nothing to fetch. Each one has a suggested task and a recorded relevance pass, so you can see yes, no, and skipped files before the diff runs. More projects are landing in <a href="https://github.com/255BITS/patchling-examples" target="_blank" rel="noopener">patchling-examples</a> (<a href="https://255bits.github.io/patchling-examples/" target="_blank" rel="noopener">live demos</a>).</p>
+  <div class="gallery">
+    <div class="gcard">
+      <h3>Greeting app</h3>
+      <p>Six files. The task only changes the greeting. History is over the sample size cap; the logo is binary.</p>
+      <span class="files mono">greet.py · main.py · math_utils.py · README.md · assets/logo.bin · vendor/HISTORY.txt</span>
+      <p style="margin-top:.6rem"><button class="btn" type="button" data-sample="proj-greet">Load “Say goodbye instead of hello”</button></p>
+    </div>
+    <div class="gcard">
+      <h3>Small website</h3>
+      <p>The colors live in one stylesheet. The script and the license are noise.</p>
+      <span class="files mono">index.html · styles.css · app.js · LICENSE</span>
+      <p style="margin-top:.6rem"><button class="btn" type="button" data-sample="proj-page">Load “Navy background, larger title”</button></p>
+    </div>
+    <div class="gcard">
+      <h3>Lab character</h3>
+      <p>Mood and memory are the scene. A menu and a grocery list are not.</p>
+      <span class="files mono">soul.md · mood.md · memory.md · menu.md · todo.txt</span>
+      <p style="margin-top:.6rem"><button class="btn" type="button" data-sample="proj-lab">Load “The lab loses power”</button></p>
+    </div>
+  </div>
+</section>
+
+<section id="usage">
+  <p class="kicker">Usage</p>
+  <h2>The same filter in JavaScript and Python.</h2>
+  <p class="lead">Only the <code class="inline">yes</code> files are passed to <code class="inline">generateDiff</code>. <code class="inline">smartapply</code> still receives the full map, so everything the diff never mentions stays put. Ambiguous answers and errors include the file and show up on the decision.</p>
+  <div class="ecosys">
+    <div class="window snippet">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">filter.js</span><button data-copy='import { filterRelevant, buildEnvironment, generateDiff, smartapply } from "patchling";
+
+const result = await filterRelevant(files, task, {
+  concurrency: 8,
+  onDecision(d) { console.log(d.path, d.decision, d.skippedReason || d.error || d.reason); },
+});
+
+const diff = await generateDiff(buildEnvironment(result.files), task, { apiKey, model });
+const next = await smartapply(diff, files, { apiKey, model });'>copy</button></div>
+      <pre><span class="kw">import</span> { filterRelevant, buildEnvironment, generateDiff, smartapply } <span class="kw">from</span> <span class="hdr">"patchling"</span>;
+
+<span class="kw">const</span> result = <span class="kw">await</span> filterRelevant(files, task, {
+  concurrency: <span class="kw">8</span>,
+  onDecision(d) { console.log(d.path, d.decision, d.skippedReason || d.error || d.reason); },
+});
+
+<span class="kw">const</span> diff = <span class="kw">await</span> generateDiff(buildEnvironment(result.files), task, { apiKey, model });
+<span class="kw">const</span> next = <span class="kw">await</span> smartapply(diff, files, { apiKey, model });</pre>
+    </div>
+    <div class="window snippet">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="t">filter.py</span><button data-copy='from patchling import filter_relevant, build_environment, generate_diff, smartapply
+
+result = filter_relevant(
+    files,
+    task,
+    concurrency=8,
+)
+
+env = build_environment(result.files)
+diff = generate_diff(env, task)
+updated = smartapply(diff, files)'>copy</button></div>
+      <pre><span class="kw">from</span> patchling <span class="kw">import</span> filter_relevant, build_environment, generate_diff, smartapply
+
+result = filter_relevant(
+    files,
+    task,
+    concurrency=<span class="kw">8</span>,
+)
+
+env = build_environment(result.files)
+diff = generate_diff(env, task)
+updated = smartapply(diff, files)</pre>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:1rem">Each decision is <code class="inline">{ path, decision, reason, raw, tokens, promptTokens, completionTokens, cached, skippedReason, error, failedOpen }</code>. <code class="inline">decision</code> is <code class="inline">yes</code> or <code class="inline">no</code>. A leading standalone yes or no is required; other wording fails open and is not cached. <code class="inline">skippedReason</code> is <code class="inline">binary</code>, <code class="inline">oversize</code>, <code class="inline">truncated</code>, <code class="inline">ignored</code>, or null. The default model is <code class="inline">xiaomi/mimo-v2.6-flash</code> (<code class="inline">GPTDIFF_FILTER_MODEL</code>). The cache key hashes prompt version 3, the model, the output-token limit, the reasoning effort actually sent, the task, the file path, the mode (`full`, `truncated`, or `binary`), the preview note, and the body that was sent (`byteLength:utf8` for each field). Token estimates use `ceil(code points / 4)`. Python uses the same fields in snake_case (<code class="inline">skipped_reason</code>, <code class="inline">prompt_tokens</code>, <code class="inline">failed_open</code>, <code class="inline">max_bytes</code>, <code class="inline">max_tokens</code>, <code class="inline">on_oversize</code>, <code class="inline">on_binary</code>). Reported Flask recall 1.0 and 0.8× token figures are UNVERIFIED.</p>
+</section>
+
 <section id="why">
   <p class="kicker">Why it doesn't flake</p>
   <h2>Why diffs — and why yours will apply.</h2>
@@ -605,6 +732,7 @@ import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile }
   from "https://esm.sh/patchling";
 import { registerClient, beginSignIn, completeSignIn }
   from "https://esm.sh/patchling/oauth";
+import { filterRelevant, DEFAULT_FILTER_MODEL } from "./relevance.js";
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT_MODEL = "zai-org/glm-5.2:thinking";
@@ -662,6 +790,10 @@ const SCENARIOS = {
     },
     preview: (files) =>
       `<style>html,body{margin:0;height:100%}body{display:grid;place-items:center;background:transparent;padding:8px;box-sizing:border-box}svg{max-width:100%;max-height:100%;display:block;border-radius:8px}${files["style.css"] || ""}</style>${files["scene.svg"] || ""}`,
+    decisions: {
+      "scene.svg": { decision: "yes", reason: "the picture the sentence restyles", tokens: 44, raw: "yes — the picture the sentence restyles" },
+      "style.css": { decision: "yes", reason: "the colors the sentence restyles", tokens: 39, raw: "yes — the colors the sentence restyles" },
+    },
   },
   character: {
     label: "Direct a character",
@@ -690,6 +822,11 @@ const SCENARIOS = {
         .mood{display:inline-block;background:#2dd4a71f;color:#2dd4a7;border:1px solid #2dd4a744;border-radius:1rem;padding:2px 10px;font-weight:700;font-size:11px;margin-bottom:10px}
         p{margin:.4em 0}.dir{color:#93a39d;font-style:italic;text-align:center;font-size:12px}.you{text-align:right;color:#9ecbff}.bot{color:#e4ece9}</style>
         <span class="mood">mood: ${esc(mood)}</span>${rows}`;
+    },
+    decisions: {
+      "soul.md": { decision: "yes", reason: "who is speaking", tokens: 28, raw: "yes — who is speaking" },
+      "mood.md": { decision: "yes", reason: "the beat the task changes", tokens: 31, raw: "yes — the beat the task changes" },
+      "chat.md": { decision: "yes", reason: "the scene continues here", tokens: 33, raw: "yes — the scene continues here" },
     },
   },
   comic: {
@@ -726,6 +863,11 @@ const SCENARIOS = {
         .sc{margin:2px 0;color:#b8c0c8;font-style:italic}.dl{margin:0;font-weight:700}</style>
         <h1>${esc(title)}</h1>${cards}`;
     },
+    decisions: {
+      "config.json": { decision: "yes", reason: "page title and cast", tokens: 22, raw: "yes — page title and cast" },
+      "panels/1.json": { decision: "no", reason: "the opening panel stays", tokens: 24, raw: "no — the opening panel stays" },
+      "panels/2.json": { decision: "yes", reason: "the beat the cliffhanger follows", tokens: 30, raw: "yes — the beat the cliffhanger follows" },
+    },
   },
   goodbye: {
     label: "And yes — code",
@@ -739,6 +881,92 @@ const SCENARIOS = {
     response: 'Renaming the function and flipping the greeting in both files.\n\n```diff\n--- a/greet.py\n+++ b/greet.py\n@@ -7,2 +7,2 @@\n-def greet(name):\n-    print("Hello, " + name + "!")\n+def farewell(name):\n+    print("Goodbye, " + name + "!")\n--- a/main.py\n+++ b/main.py\n@@ -1,4 +1,4 @@\n-from greet import greet\n+from greet import farewell\n \n def main():\n-    greet("world")\n+    farewell("world")\n```\n\nBoth call sites now use `farewell`.',
     applied: {
       "main.py": 'from greet import farewell\n\ndef main():\n    farewell("World")\n\nif __name__ == "__main__":\n    main()\n',
+    },
+    decisions: {
+      "greet.py": { decision: "yes", reason: "defines the greeting", tokens: 26, raw: "yes — defines the greeting" },
+      "main.py": { decision: "yes", reason: "calls the greeting", tokens: 24, raw: "yes — calls the greeting" },
+    },
+  },
+  "proj-greet": {
+    sample: true,
+    filterDefault: true,
+    maxBytes: 400,
+    onOversize: "exclude",
+    label: "Greeting app",
+    desc: "Six files, one greeting. The recorded pass keeps greet.py, drops the helpers, and skips a binary logo and an oversized history (this sample caps files at 400 bytes).",
+    goal: "Say goodbye instead of hello",
+    files: {
+      "greet.py": 'def greet(name):\n    print("Hello, " + name + "!")\n',
+      "main.py": 'from greet import greet\n\ndef main():\n    greet("World")\n',
+      "math_utils.py": 'def add(a, b):\n    return a + b\n',
+      "README.md": 'A tiny greeting program. The words live in greet.py.\n',
+      "assets/logo.bin": "\u0000PNG\u0000logo\u0000",
+      "vendor/HISTORY.txt": "Internal release notes. Not part of the greeting.\n".repeat(12),
+    },
+    decisions: {
+      "greet.py": { decision: "yes", reason: "prints the greeting the task changes", tokens: 48, raw: "yes — prints the greeting the task changes" },
+      "main.py": { decision: "no", reason: "calls greet, but the words are not here", tokens: 41, raw: "no — calls greet, but the words are not here" },
+      "math_utils.py": { decision: "no", reason: "arithmetic helper", tokens: 22, raw: "no — arithmetic helper" },
+      "README.md": { decision: "no", reason: "docs, not the string to edit", tokens: 27, raw: "no — docs, not the string to edit" },
+      "assets/logo.bin": { decision: "no", skippedReason: "binary", reason: "binary file; excluded without a model call", tokens: 0, raw: null },
+      "vendor/HISTORY.txt": { decision: "no", skippedReason: "oversize", reason: "over the 400-byte sample cap", tokens: 0, raw: null },
+    },
+    response: 'The greeting string is only in greet.py.\n\n```diff\n--- a/greet.py\n+++ b/greet.py\n@@ -1,2 +1,2 @@\n def greet(name):\n-    print("Hello, " + name + "!")\n+    print("Goodbye, " + name + "!")\n```\n',
+    applied: {},
+  },
+  "proj-page": {
+    sample: true,
+    filterDefault: true,
+    label: "Small website",
+    desc: "Four files. Navy and the title size live in styles.css. The markup, the boot script, and the license stay out of the diff.",
+    goal: "Make the page background navy and the title larger",
+    files: {
+      "index.html": '<!doctype html>\n<html>\n<head><title>Welcome</title></head>\n<body>\n  <h1>Welcome</h1>\n  <p>A small page.</p>\n</body>\n</html>\n',
+      "styles.css": 'body { background: #ffffff; color: #222222; font-family: sans-serif; }\nh1 { font-size: 16px; }\n',
+      "app.js": 'console.log("ready");\n',
+      "LICENSE": 'MIT. Copyright the author.\n',
+    },
+    decisions: {
+      "index.html": { decision: "no", reason: "markup does not set the color or the size", tokens: 38, raw: "no — markup does not set the color or the size" },
+      "styles.css": { decision: "yes", reason: "background and title size", tokens: 29, raw: "yes — background and title size" },
+      "app.js": { decision: "no", reason: "boot log", tokens: 14, raw: "no — boot log" },
+      "LICENSE": { decision: "no", reason: "license text", tokens: 12, raw: "no — license text" },
+    },
+    response: 'Only the stylesheet sets the background and the title size.\n\n```diff\n--- a/styles.css\n+++ b/styles.css\n@@ -1,2 +1,2 @@\n-body { background: #ffffff; color: #222222; font-family: sans-serif; }\n-h1 { font-size: 16px; }\n+body { background: #0b1026; color: #e8eefc; font-family: sans-serif; }\n+h1 { font-size: 28px; }\n```\n',
+    applied: {},
+    previewHeight: 180,
+    preview: (files) => (files["index.html"] || "").replace("</head>", `<style>${files["styles.css"] || ""}</style></head>`),
+  },
+  "proj-lab": {
+    sample: true,
+    filterDefault: true,
+    label: "Lab character",
+    desc: "The power cut belongs in mood and memory. The soul, the menu, and the grocery list are not that scene.",
+    goal: "The lab loses power",
+    files: {
+      "soul.md": "MARVIS — a sardonic lab assistant. Loyal, theatrical, allergic to being thanked.\n",
+      "mood.md": "smug - the fusion demo went perfectly.\n",
+      "memory.md": "The fusion demo held for nine minutes.\n",
+      "menu.md": "Tuesday special: mushroom risotto.\n",
+      "todo.txt": "- oat milk\n- batteries\n",
+    },
+    decisions: {
+      "soul.md": { decision: "no", reason: "personality is unchanged", tokens: 24, raw: "no — personality is unchanged" },
+      "mood.md": { decision: "yes", reason: "the beat the task changes", tokens: 30, raw: "yes — the beat the task changes" },
+      "memory.md": { decision: "yes", reason: "what just happened", tokens: 26, raw: "yes — what just happened" },
+      "menu.md": { decision: "no", reason: "a restaurant menu", tokens: 18, raw: "no — a restaurant menu" },
+      "todo.txt": { decision: "no", reason: "a grocery list", tokens: 16, raw: "no — a grocery list" },
+    },
+    response: 'The power cut lands in mood and memory. The rest of the folder is someone else\'s day.\n\n```diff\n--- a/mood.md\n+++ b/mood.md\n@@ -1 +1 @@\n-smug - the fusion demo went perfectly.\n+rattled - on backup batteries, pretending otherwise.\n--- a/memory.md\n+++ b/memory.md\n@@ -1 +1,2 @@\n The fusion demo held for nine minutes.\n+Then the lights died.\n```\n',
+    applied: {},
+    previewHeight: 220,
+    preview: (files) => {
+      const mood = ((files["mood.md"] || "").split("\n")[0] || "").trim();
+      const memory = (files["memory.md"] || "").trim().split("\n").filter(Boolean)
+        .map((l) => `<p>${esc(l)}</p>`).join("");
+      return `<style>html,body{margin:0}body{background:#0c1210;color:#e4ece9;font:13px/1.5 system-ui,sans-serif;padding:12px}
+        .mood{display:inline-block;background:#2dd4a71f;color:#2dd4a7;border:1px solid #2dd4a744;border-radius:1rem;padding:2px 10px;font-weight:700;font-size:11px;margin-bottom:10px}
+        p{margin:.35em 0}</style><span class="mood">mood: ${esc(mood)}</span>${memory}`;
     },
   },
 };
@@ -807,6 +1035,7 @@ async function loadModels() {
   computeTop();
   allModels.sort((a, b) => (rank(a.id) - rank(b.id)) || a.id.localeCompare(b.id));
   renderModelRow();
+  renderFilterModelRow();
   return allModels;
 }
 function modelButton(m) {
@@ -849,6 +1078,65 @@ $("modelsearch").addEventListener("keydown", (e) => {
   if (e.key === "Enter") { const v = $("modelsearch").value.trim(); if (v) { setModel(v); $("modelpicker").style.display = "none"; } }
 });
 renderModelRow();
+
+/* ---------- decision model (cheap yes/no pass) ---------- */
+let FILTER_MODEL = localStorage.getItem("pl_filter_model") || DEFAULT_FILTER_MODEL;
+function setFilterModel(id) {
+  FILTER_MODEL = id;
+  localStorage.setItem("pl_filter_model", id);
+  renderFilterModelRow();
+}
+function renderFilterModelRow() {
+  const m = priceOf(FILTER_MODEL) || {};
+  $("filtermodelname").textContent = FILTER_MODEL;
+  $("filtermodelprice").textContent = m.prompt != null ? `(${px(m.prompt)} / ${px(m.completion)} per 1M)` : "";
+}
+function filterModelButton(m) {
+  const b = document.createElement("button");
+  b.type = "button";
+  if (m.id === FILTER_MODEL) b.className = "sel";
+  const name = document.createElement("span"); name.className = "mono"; name.textContent = m.id;
+  const price = document.createElement("span"); price.className = "price mono";
+  price.textContent = m.prompt != null ? `${px(m.prompt)} / ${px(m.completion)}` : "—";
+  b.append(name, price);
+  b.addEventListener("click", () => { setFilterModel(m.id); $("filtermodelpicker").style.display = "none"; });
+  return b;
+}
+function renderFilterModelList() {
+  const q = $("filtermodelsearch").value.trim().toLowerCase();
+  const matches = (allModels || []).filter((m) => m.id.toLowerCase().includes(q));
+  $("filtermodellist").innerHTML = "";
+  for (const m of matches) $("filtermodellist").appendChild(filterModelButton(m));
+  $("filtermodelcount").textContent = `${matches.length} match${matches.length === 1 ? "" : "es"}`;
+}
+function renderFilterChrome() {
+  const on = $("filteron").checked;
+  $("filtermodelrow").style.display = on ? "flex" : "none";
+  if (!on) $("filtermodelpicker").style.display = "none";
+  localStorage.setItem("pl_filter", on ? "1" : "0");
+}
+$("filteron").checked = localStorage.getItem("pl_filter") === "1";
+$("filteron").addEventListener("change", renderFilterChrome);
+$("filtermodelchange").addEventListener("click", async () => {
+  const open = $("filtermodelpicker").style.display === "block";
+  $("filtermodelpicker").style.display = open ? "none" : "block";
+  if (!open) {
+    $("filtermodelsearch").value = "";
+    $("filtermodellist").innerHTML = "<div class='divider'>loading…</div>";
+    await loadModels();
+    renderFilterModelList();
+    $("filtermodelsearch").focus();
+  }
+});
+$("filtermodelsearch").addEventListener("input", renderFilterModelList);
+$("filtermodelsearch").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const v = $("filtermodelsearch").value.trim();
+    if (v) { setFilterModel(v); $("filtermodelpicker").style.display = "none"; }
+  }
+});
+renderFilterModelRow();
+renderFilterChrome();
 
 /* ---------- OAuth (Sign in with NanoGPT, PKCE) ---------- */
 // NanoGPT canonicalizes the loopback host to "localhost"; hop there so the
@@ -916,6 +1204,7 @@ function renderScenarios() {
   const wrap = $("scenarios");
   wrap.innerHTML = "";
   for (const [key, s] of Object.entries(SCENARIOS)) {
+    if (s.sample) continue;
     const b = document.createElement("button");
     b.textContent = s.label;
     b.classList.toggle("on", key === scenarioKey);
@@ -927,12 +1216,24 @@ function renderScenarios() {
 
 function selectScenario(key) {
   scenarioKey = key;
-  files = { ...SCENARIOS[key].files };
-  $("goal").value = SCENARIOS[key].goal;
+  const scn = SCENARIOS[key];
+  files = { ...scn.files };
+  $("goal").value = scn.goal;
+  if (scn.filterDefault) {
+    $("filteron").checked = true;
+    renderFilterChrome();
+  }
   renderScenarios();
+  renderSampleSelection();
   renderEditors();
   renderPreview();
   clearOutputs();
+}
+
+function renderSampleSelection() {
+  for (const btn of document.querySelectorAll("[data-sample]")) {
+    btn.classList.toggle("on", btn.dataset.sample === scenarioKey);
+  }
 }
 
 function renderEditors() {
@@ -967,6 +1268,8 @@ function clearOutputs() {
   $("diffwrap").style.display = "none";
   $("diffpane").textContent = "";
   $("diffsrc").textContent = "";
+  $("decisionwrap").style.display = "none";
+  $("decisionlist").innerHTML = "";
   $("results").innerHTML = "";
   $("verdict").style.display = "none";
   $("verdict").innerHTML = "";
@@ -1049,10 +1352,56 @@ function resultMsg(text) {
   $("results").replaceChildren(p);
 }
 
+/* PLAYGROUND_HELPERS:START */
+let activeRun = 0;
+function beginRun() {
+  activeRun += 1;
+  return activeRun;
+}
+function isCurrentRun(runId) {
+  return runId === activeRun;
+}
+function classifierTokens(decisions) {
+  if (!decisions) return 0;
+  let total = 0;
+  for (const decision of decisions) total += Number(decision && decision.tokens) || 0;
+  return total;
+}
+function classifierCost(decisions, price) {
+  const list = Array.isArray(decisions) ? decisions : [];
+  let tokens = 0;
+  let prompt = 0;
+  let completion = 0;
+  let priced = true;
+  for (const decision of list) {
+    const total = Number(decision && decision.tokens) || 0;
+    tokens += total;
+    const hasSplit = !!(decision && (decision.promptTokens != null || decision.completionTokens != null));
+    if (total > 0 && !hasSplit) priced = false;
+    if (hasSplit) {
+      prompt += Number(decision.promptTokens) || 0;
+      completion += Number(decision.completionTokens) || 0;
+    }
+  }
+  let dollars = null;
+  if (priced && price && price.prompt != null && price.completion != null) {
+    dollars = (prompt * Number(price.prompt) + completion * Number(price.completion)) / 1000000;
+  }
+  return { tokens, dollars };
+}
+function formatClassifierCost(decisions, price) {
+  const cost = classifierCost(decisions, price);
+  const noun = cost.tokens === 1 ? "token" : "tokens";
+  let text = "classifier " + cost.tokens + " " + noun;
+  if (cost.dollars != null) text += " · $" + cost.dollars.toFixed(4);
+  return text;
+}
+/* PLAYGROUND_HELPERS:END */
+
 // The punchline, told only after it happened: which files git apply would
 // have bounced, and what smartapply did about it. Built from the actual run
 // outcome, so it's just as true in real mode as in the canned demo.
-function renderVerdict(perFile, inputFiles, updated, llmResolved) {
+function renderVerdict(perFile, inputFiles, updated, llmResolved, decisions) {
   const v = $("verdict");
   v.innerHTML = "";
   const repaired = [...llmResolved].filter((p) => p in updated);
@@ -1082,6 +1431,8 @@ function renderVerdict(perFile, inputFiles, updated, llmResolved) {
     line("ok", "✓ smartapply — " + okBits.join(" · "));
   }
 
+  if (decisions) line("ok", formatClassifierCost(decisions, priceOf(FILTER_MODEL)));
+
   if (mode === "demo" && SCENARIOS[scenarioKey].reveal) {
     const why = document.createElement("p");
     why.className = "vwhy";
@@ -1100,7 +1451,6 @@ function setBadge(card, cls, text, title) {
 
 /* ---------- the run ---------- */
 async function run() {
-  if (running) return;
   const scn = SCENARIOS[scenarioKey];
 
   // Demo mode replays a canned response, so it must run against the canned
@@ -1119,36 +1469,54 @@ async function run() {
 
   const goal = $("goal").value.trim();
   if (!goal) return;
+  const runId = beginRun();
   const inputFiles = { ...files };
 
   running = true;
   renderRun();
   $("upsell").style.display = "none";
-  $("diffsrc").textContent = mode === "demo" ? "· pre-recorded reply, real engine" : "· live from NanoGPT";
   $("diffpane").textContent = "";
-  $("diffwrap").style.display = "block";
+  $("diffwrap").style.display = "none";
+  $("decisionlist").innerHTML = "";
+  $("decisionwrap").style.display = "none";
   $("results").innerHTML = "";
   $("status").style.display = "block";
   document.querySelector("#status .spin").style.display = "";
-  $("phase").textContent = "generating diff…";
+  const filtering = $("filteron").checked;
+  $("phase").textContent = filtering ? "checking which files are relevant…" : "generating diff…";
 
   const diffPane = $("diffpane");
   const onDiffToken = (t) => {
+    if (!isCurrentRun(runId)) return;
     diffPane.textContent += t;
     diffPane.scrollTop = diffPane.scrollHeight;
   };
 
   try {
     const key = getKey();
+    let decisions = null;
+    if (filtering) {
+      $("decisionwrap").style.display = "block";
+      $("filtersrc").textContent = mode === "demo" ? "· pre-recorded decisions" : "· live, cheap model";
+      decisions = await collectDecisions(inputFiles, goal, runId);
+      if (!isCurrentRun(runId)) return;
+    }
+
+    if (!isCurrentRun(runId)) return;
+    $("phase").textContent = "generating diff…";
+    $("diffsrc").textContent = mode === "demo" ? "· pre-recorded reply, real engine" : "· live from NanoGPT";
+    $("diffwrap").style.display = "block";
     const genOpts = mode === "demo"
       ? { callLlm: makeFakeCallLlm(scn), onToken: onDiffToken }
       : { apiKey: key, model: MODEL, onToken: onDiffToken };
 
-    const diff = await generateDiff(buildEnvironment(inputFiles), goal, genOpts);
+    const diff = await generateDiff(buildEnvironment(filesForDiff(inputFiles, decisions)), goal, genOpts);
+    if (!isCurrentRun(runId)) return;
     renderDiff(diff);
 
     const perFile = parseDiffPerFile(diff);
     if (!diff.trim() || !perFile.length) {
+      if (!isCurrentRun(runId)) return;
       resultMsg("⚠ The model returned no applicable diff. Try rephrasing the goal.");
       $("phase").textContent = "no diff";
       document.querySelector("#status .spin").style.display = "none";
@@ -1169,6 +1537,7 @@ async function run() {
     // means the deterministic patcher handled them.
     const llmResolved = new Set();
     const onApplyToken = (t, path) => {
+      if (!isCurrentRun(runId)) return;
       llmResolved.add(path);
       const card = cards.get(path);
       if (!card) return;
@@ -1184,6 +1553,7 @@ async function run() {
       : { apiKey: key, model: APPLY_MODEL, onToken: onApplyToken };
 
     const updated = await smartapply(diff, inputFiles, applyOpts);
+    if (!isCurrentRun(runId)) return;
 
     for (const [path, card] of cards) {
       const pre = card.querySelector("pre");
@@ -1210,19 +1580,107 @@ async function run() {
     renderEditors();
     renderPreview();
 
-    renderVerdict(perFile, inputFiles, updated, llmResolved);
+    renderVerdict(perFile, inputFiles, updated, llmResolved, decisions);
 
-    $("phase").textContent = "done ✓ — the preview and files above are the new map";
+    const cost = decisions ? formatClassifierCost(decisions, priceOf(FILTER_MODEL)) : "";
+    $("phase").textContent = cost
+      ? "done ✓ — " + cost + " — the preview and files above are the new map"
+      : "done ✓ — the preview and files above are the new map";
     document.querySelector("#status .spin").style.display = "none";
     if (mode === "demo") $("upsell").style.display = "block";
   } catch (e) {
+    if (!isCurrentRun(runId)) return;
     $("phase").textContent = "error";
     document.querySelector("#status .spin").style.display = "none";
     resultMsg("Error: " + e.message);
   } finally {
-    running = false;
-    renderRun();
+    if (isCurrentRun(runId)) {
+      running = false;
+      renderRun();
+    }
   }
+}
+
+function filesForDiff(map, decisions) {
+  if (!decisions) return map;
+  const yes = new Set(decisions.filter((d) => d.decision === "yes").map((d) => d.path));
+  const out = {};
+  for (const [path, content] of Object.entries(map)) {
+    if (yes.has(path)) out[path] = content;
+  }
+  return out;
+}
+
+function renderDecision(d) {
+  const row = document.createElement("div");
+  row.className = "drow";
+  const skipped = d.skippedReason === "binary" || d.skippedReason === "oversize" || d.skippedReason === "ignored";
+  const badge = document.createElement("span");
+  badge.className = "badge " + (skipped ? "skip" : d.decision === "yes" ? "yes" : "no");
+  badge.textContent = skipped ? "skipped" : d.decision;
+  const path = document.createElement("span");
+  path.className = "mono";
+  path.textContent = d.path;
+  const why = document.createElement("span");
+  why.className = "why";
+  const bits = [];
+  if (d.skippedReason) bits.push(d.skippedReason);
+  if (d.reason) bits.push(d.reason);
+  if (d.error) bits.push(d.error);
+  if (d.cached) bits.push("cached");
+  if (d.tokens) bits.push(d.tokens + " tokens");
+  why.textContent = bits.join(" · ");
+  row.append(badge, path, why);
+  $("decisionlist").appendChild(row);
+}
+
+async function collectDecisions(inputFiles, goal, runId) {
+  if (mode === "demo") {
+    const canned = SCENARIOS[scenarioKey].decisions || {};
+    const out = [];
+    for (const path of Object.keys(inputFiles)) {
+      if (!isCurrentRun(runId)) return out;
+      const src = canned[path] || {
+        decision: "yes",
+        reason: "included — this demo has no recorded decision for the file",
+        tokens: 0,
+        raw: "yes",
+      };
+      const d = {
+        path,
+        decision: src.decision,
+        raw: src.raw ?? null,
+        tokens: src.tokens ?? null,
+        cached: false,
+        skippedReason: src.skippedReason ?? null,
+        error: src.error ?? null,
+        reason: src.reason ?? null,
+      };
+      out.push(d);
+      renderDecision(d);
+      await sleep(50);
+    }
+    return out;
+  }
+  $("decisionlist").innerHTML = "";
+  const scn = SCENARIOS[scenarioKey];
+  const result = await filterRelevant(inputFiles, goal, {
+    apiKey: getKey(),
+    model: FILTER_MODEL,
+    maxBytes: scn.maxBytes,
+    maxTokens: scn.maxTokens,
+    onOversize: scn.onOversize,
+    onBinary: scn.onBinary,
+    onDecision: (d) => { if (isCurrentRun(runId)) renderDecision(d); },
+  });
+  return result.decisions;
+}
+
+for (const btn of document.querySelectorAll("[data-sample]")) {
+  btn.addEventListener("click", () => {
+    selectScenario(btn.dataset.sample);
+    $("playground").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  });
 }
 
 $("run").addEventListener("click", run);

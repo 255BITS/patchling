@@ -1,9 +1,26 @@
 /**
  * Rebuild the environment string from a `{ path: content }` map.
+ *
+ * Opt-in relevance filter: pass `{ decisions }` from `filterRelevant` and
+ * only files whose decision is `"yes"` are included. An array of those
+ * decisions is also accepted as the second argument. Omit it and every file
+ * is included, in insertion order. Every other file stays out of the
+ * string that `generateDiff` sees.
+ *
  * @param {Record<string, string>} filesDict
+ * @param {{ decisions?: Array<{ path?: string, decision?: string }> } | Array<{ path?: string, decision?: string }>} [opts]
+ *   `{ decisions }` from `filterRelevant`, or that array itself.
  * @returns {string}
  */
-export function buildEnvironment(filesDict: Record<string, string>): string;
+export function buildEnvironment(filesDict: Record<string, string>, opts?: {
+    decisions?: Array<{
+        path?: string;
+        decision?: string;
+    }>;
+} | Array<{
+    path?: string;
+    decision?: string;
+}>): string;
 /**
  * Build the prompt, call the LLM, and extract the unified diff from the
  * ```diff fenced blocks of the response.

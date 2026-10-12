@@ -150,6 +150,8 @@ async function consumeSseStream(resp, onToken) {
  * @param {number} [opts.maxTokens]
  * @param {number} [opts.temperature]
  * @param {number} [opts.budgetTokens] Anthropic extended-thinking budget
+ * @param {string | null} [opts.reasoningEffort] OpenAI-compatible `reasoning_effort`
+ *   (`low`, `medium`, `high`). Omitted when empty.
  * @param {(text: string) => void} [opts.onToken] when provided, the request is
  *   made with `stream: true` and this is called once per content delta as
  *   tokens arrive. The resolved value keeps the exact non-streaming shape
@@ -168,6 +170,7 @@ export async function callLlm({
   maxTokens = null,
   temperature = 1.0,
   budgetTokens = null,
+  reasoningEffort = null,
   onToken = null,
   fetchImpl,
   maxRetries = 3,
@@ -235,6 +238,7 @@ export async function callLlm({
     messages,
     temperature,
     ...(maxTokens ? { max_tokens: maxTokens } : {}),
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     // Streaming: ask for SSE deltas plus a final usage chunk.
     ...(onToken ? { stream: true, stream_options: { include_usage: true } } : {}),
   });

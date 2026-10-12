@@ -6,6 +6,31 @@
  */
 
 export { generateDiff, smartapply, buildEnvironment, callLlmForDiff, callLlmForApply, callLlmForApplyWithThink } from './gptdiff.js';
+export {
+  filterRelevant,
+  RelevanceCache,
+  createMemoryCache,
+  parseRelevanceAnswer,
+  isBinaryContent,
+  isIgnoredPath,
+  countTokens,
+  formatFilterSummary,
+  dumpDecisions,
+  DEFAULT_FILTER_MODEL,
+  DEFAULT_FILTER_MAX_BYTES,
+  DEFAULT_FILTER_MAX_TOKENS,
+  DEFAULT_FILTER_MAX_OUTPUT_TOKENS,
+  DEFAULT_FILTER_REASONING_EFFORT,
+  DEFAULT_FILTER_CONCURRENCY,
+  FILTER_PROMPT_VERSION,
+  PROMPT_VERSION,
+  DEFAULT_IGNORE_PATTERNS,
+} from './filter.js';
+
+/**
+ * @typedef {import('./filter.js').RelevanceDecision} RelevanceDecision
+ * @typedef {import('./filter.js').FilterRelevantResult} FilterRelevantResult
+ */
 export { parseDiffPerFile, applyDiff, applyPatchToFile } from './applydiff.js';
 export { colorCodeDiff, swallowReasoning, stripBadOutput, extractDiffBlocks, stripThinkTags } from './text.js';
 export { callLlm, resolveApiKey, resolveBaseUrl } from './llm.js';

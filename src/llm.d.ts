@@ -9,6 +9,8 @@
  * @param {number} [opts.maxTokens]
  * @param {number} [opts.temperature]
  * @param {number} [opts.budgetTokens] Anthropic extended-thinking budget
+ * @param {string | null} [opts.reasoningEffort] OpenAI-compatible `reasoning_effort`
+ *   (`low`, `medium`, `high`). Omitted when empty.
  * @param {(text: string) => void} [opts.onToken] when provided, the request is
  *   made with `stream: true` and this is called once per content delta as
  *   tokens arrive. The resolved value keeps the exact non-streaming shape
@@ -19,7 +21,7 @@
  * @param {number} [opts.retryBaseMs] base backoff in ms (default 1500, exponential, capped 30s)
  * @returns {Promise<{choices: Array<{message: {content: string}}>, usage: object}>}
  */
-export function callLlm({ apiKey, baseUrl, model, messages, maxTokens, temperature, budgetTokens, onToken, fetchImpl, maxRetries, retryBaseMs, }: {
+export function callLlm({ apiKey, baseUrl, model, messages, maxTokens, temperature, budgetTokens, reasoningEffort, onToken, fetchImpl, maxRetries, retryBaseMs, }: {
     apiKey?: string;
     baseUrl?: string;
     model: string;
@@ -27,6 +29,7 @@ export function callLlm({ apiKey, baseUrl, model, messages, maxTokens, temperatu
     maxTokens?: number;
     temperature?: number;
     budgetTokens?: number;
+    reasoningEffort?: string | null;
     onToken?: (text: string) => void;
     fetchImpl?: typeof fetch;
     maxRetries?: number;
