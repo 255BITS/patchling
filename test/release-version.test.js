@@ -7,6 +7,7 @@ import {
   checkMainRelease,
   checkPushedTag,
   latestReleaseTag,
+  listGitTags,
 } from '../scripts/check-release-version.mjs';
 
 const script = fileURLToPath(new URL('../scripts/check-release-version.mjs', import.meta.url));
@@ -33,6 +34,16 @@ test('main accepts the latest tag or a newer version with an unreleased entry', 
   assert.match(behind.reason, /behind latest tag v0\.2\.0/);
 });
 
+test('no release tags still requires an unreleased entry to be ahead', () => {
+  const notes = '## [0.2.1] — Unreleased\n\n- intent guard\n';
+  const ahead = checkMainRelease('0.2.1', [], notes);
+  assert.equal(ahead.ok, true);
+  assert.match(ahead.reason, /ahead of no tags/);
+  const missing = checkMainRelease('0.2.1', [], '# Changelog\n');
+  assert.equal(missing.ok, false);
+  assert.match(missing.reason, /ahead of no tags/);
+});
+
 test('unreleased entry must be a heading for that version, not a later one', () => {
   const notes = [
     '## [0.2.10] — Unreleased',
@@ -49,10 +60,17 @@ test('unreleased entry must be a heading for that version, not a later one', () 
 });
 
 test('this checkout passes the main release check', () => {
+  // actions/checkout leaves tags unfetched, so CI has no v0.2.0. A full
+  // clone does. Either way the script must accept this unreleased 0.2.1.
   const run = spawnSync(process.execPath, [script, '--main'], { encoding: 'utf8' });
   assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
   assert.match(run.stdout, /0\.2\.1/);
-  assert.match(run.stdout, /v0\.2\.0/);
+  const latest = latestReleaseTag(listGitTags());
+  if (latest) {
+    assert.match(run.stdout, new RegExp(latest.tag.replace(/[.]/g, '\\.')));
+  } else {
+    assert.match(run.stdout, /no tags/);
+  }
 });
 
 test('a mismatched tag fails the CLI', () => {

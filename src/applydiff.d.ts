@@ -42,7 +42,7 @@ export function applyDiff(files: Record<string, string>, diffText: string): {
  *
  * Returns null when a body line is ambiguous (`++`, which is either a doubled
  * add marker or a literal line that starts with `+`). A non-standard hunk
- * header such as `@@ ... @@` is kept and anchored at the start of the file.
+ * header with no line numbers is kept and anchored at the start of the file.
  * {@link applyPatchToFile} refuses that header instead; this parser exists so
  * a later intent check can still see the `+`/`-` lines.
  *

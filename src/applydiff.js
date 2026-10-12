@@ -408,7 +408,7 @@ export function applyDiff(files, diffText) {
  *
  * Returns null when a body line is ambiguous (`++`, which is either a doubled
  * add marker or a literal line that starts with `+`). A non-standard hunk
- * header such as `@@ ... @@` is kept and anchored at the start of the file.
+ * header with no line numbers is kept and anchored at the start of the file.
  * {@link applyPatchToFile} refuses that header instead; this parser exists so
  * a later intent check can still see the `+`/`-` lines.
  *
@@ -583,16 +583,6 @@ function isBlank(content) {
   return !/\S/.test(content || '');
 }
 
-/**
- * True when `updatedLines` is not `originalLines` with only the budgeted
- * deletions removed and the budgeted additions inserted.
- *
- * @param {string[]} originalLines
- * @param {string[]} updatedLines
- * @param {Map<string, number>} delCounts
- * @param {Map<string, number>} addCounts
- * @returns {boolean}
- */
 const IDENT_PAIR_MIN = 0.55;
 
 /**
@@ -758,6 +748,16 @@ function applyIdentMap(text, mapping) {
   return text.replace(/[A-Za-z_][A-Za-z0-9_]*/g, (id) => mapping.get(id) || id);
 }
 
+/**
+ * True when `updatedLines` is not `originalLines` with only the budgeted
+ * deletions removed and the budgeted additions inserted.
+ *
+ * @param {string[]} originalLines
+ * @param {string[]} updatedLines
+ * @param {Map<string, number>} delCounts
+ * @param {Map<string, number>} addCounts
+ * @returns {boolean}
+ */
 function editViolates(originalLines, updatedLines, delCounts, addCounts) {
   if (!isPlusMinusEdit(originalLines, updatedLines, delCounts, addCounts)) return true;
   const origCounts = lineCounts(originalLines);
