@@ -18,7 +18,7 @@ Not tagged and not published. `package.json` is `0.2.1`; the only release tag an
 
 ### API
 
-- `filterRelevant(files, task, opts)` asks a cheap model, per file, whether that file is relevant to the task. The default model is `gemini-2.0-flash` (`GPTDIFF_FILTER_MODEL`), with concurrency 8. `onOversize` and `onBinary` are `include`, `exclude`, or `truncate` (defaults `truncate` and `exclude`). `maxBytes` (200000) and `maxTokens` (12000) cap what is sent; `0` disables either limit. A truncated `yes` still forwards the original file. The cache key adds a truncation tag. Pass a path for an optional Node JSON cache (`{ version: 1, entries }`, corrupt files ignored). Decisions use camelCase: `promptTokens`, `completionTokens`, `skippedReason` (`binary`, `oversize`, `truncated`). Ambiguous answers and thrown calls include the file; only a thrown call sets `error`. `buildEnvironment(files, { decisions })` keeps only the `yes` files for `generateDiff`.
+- `filterRelevant(files, task, opts)` asks a cheap model, per file, whether that file is relevant to the task. The default model is `xiaomi/mimo-v2.6-flash` (`GPTDIFF_FILTER_MODEL`), with concurrency 8. `onOversize` and `onBinary` are `include`, `exclude`, or `truncate` (defaults `truncate` and `exclude`). `maxBytes` (200000) and `maxTokens` (12000) cap what is sent; `0` disables either limit. A truncated `yes` still forwards the original file. The completion cap is 1024 and the call sends `reasoning_effort: low`, so a reasoning model does not spend the whole answer budget. An empty answer is an error and fails open. Timeouts and HTTP 5xx are retried with backoff. Lockfiles and generated files are skipped unless `ignore` is turned off or replaced. The cache key includes the truncation tag, the output-token limit, and the prompt version. Fallback and error decisions are not cached. `failedOpen` counts files included without a definitive answer. Decisions use camelCase: `promptTokens`, `completionTokens`, `skippedReason` (`binary`, `oversize`, `truncated`, `ignored`). `buildEnvironment(files, { decisions })` keeps only the `yes` files for `generateDiff`.
 - Renamed the package from `gptdiff-js` to `patchling` (npm name `patchling`; an intermediate publish used `gptdiff`).
 - `generateDiff` and `smartapply` stream tokens through `opts.onToken`. `generateDiff` reports token usage through `opts.onUsage`.
 - Ship JSDoc-generated `.d.ts` files, with `types` conditions on the package exports.
@@ -27,7 +27,7 @@ Not tagged and not published. `package.json` is `0.2.1`; the only release tag an
 ### Site
 
 - `patchling.app` landing page: in-browser playground (canned demo and live NanoGPT), model picker, and Open Graph card.
-- The playground can run `filterRelevant` before the diff: a toggle, a decision-model picker (default `gemini-2.0-flash`), and a per-file yes/no view (reasons, tokens, binary and oversize skips, truncated previews). Bundled sample projects exercise it without leaving the page.
+- The playground can run `filterRelevant` before the diff: a toggle, a decision-model picker (default `xiaomi/mimo-v2.6-flash`), and a per-file yes/no view (reasons, tokens, binary, oversize, and ignored skips, truncated previews). Bundled sample projects exercise it without leaving the page.
 - README links that 404'd after the repo rename now point at patchling.app and the Python package.
 
 ### CI

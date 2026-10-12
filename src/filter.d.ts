@@ -34,6 +34,12 @@ export function countTokens(text: string): number;
  */
 export function isBinaryContent(content: unknown): boolean;
 /**
+ * @param {string} filePath
+ * @param {string[]} patterns
+ * @returns {boolean}
+ */
+export function isIgnoredPath(filePath: string, patterns?: string[]): boolean;
+/**
  * Ask a cheap model which files are relevant to `task`.
  *
  * `files` is a `{ path: content }` map (string or byte array). The returned
@@ -63,6 +69,12 @@ export function isBinaryContent(content: unknown): boolean;
  * @param {'include' | 'exclude' | 'truncate'} [opts.onOversize] default `truncate`
  * @param {'include' | 'exclude' | 'truncate'} [opts.onBinary] default `exclude`
  * @param {number} [opts.maxOutputTokens] completion cap (default {@link DEFAULT_FILTER_MAX_OUTPUT_TOKENS})
+ * @param {string | null} [opts.reasoningEffort] default {@link DEFAULT_FILTER_REASONING_EFFORT}; `null` omits it
+ * @param {number} [opts.retries] extra attempts after a timeout or HTTP 5xx (default 2)
+ * @param {number} [opts.retryBaseMs] backoff base in ms (default 200, doubles, capped at 30s)
+ * @param {boolean | string[] | null} [opts.ignore] lockfile and generated-file patterns.
+ *   `true` or omitted uses {@link DEFAULT_IGNORE_PATTERNS}. `false` or `null` classifies every path.
+ *   An array replaces the default list.
  * @param {(decision: RelevanceDecision) => void} [opts.onDecision] called as each file finishes (completion order)
  * @param {string} [opts.apiKey] `GPTDIFF_LLM_API_KEY` when omitted
  * @param {string} [opts.baseUrl] `GPTDIFF_LLM_BASE_URL` when omitted
@@ -82,6 +94,10 @@ export function filterRelevant(files: Record<string, string | Uint8Array>, task:
     onOversize?: "include" | "exclude" | "truncate";
     onBinary?: "include" | "exclude" | "truncate";
     maxOutputTokens?: number;
+    reasoningEffort?: string | null;
+    retries?: number;
+    retryBaseMs?: number;
+    ignore?: boolean | string[] | null;
     onDecision?: (decision: RelevanceDecision) => void;
     apiKey?: string;
     baseUrl?: string;
@@ -103,15 +119,31 @@ export function formatFilterSummary(result: FilterRelevantResult, verbose?: bool
  */
 export function dumpDecisions(result: FilterRelevantResult, path: string): Promise<void>;
 /** Cheap default for yes/no classification. Override with GPTDIFF_FILTER_MODEL. */
-export const DEFAULT_FILTER_MODEL: "gemini-2.0-flash";
+export const DEFAULT_FILTER_MODEL: "xiaomi/mimo-v2.6-flash";
 /** In-flight classifications per call when `concurrency` is omitted. */
 export const DEFAULT_FILTER_CONCURRENCY: 8;
 /** UTF-8 size cap. `0` or `null` disables it. */
 export const DEFAULT_FILTER_MAX_BYTES: 200000;
 /** Input-token cap (characters / 4 when no tokenizer is bundled). `0` or `null` disables it. */
 export const DEFAULT_FILTER_MAX_TOKENS: 12000;
-/** Completion cap for the yes/no call. */
-export const DEFAULT_FILTER_MAX_OUTPUT_TOKENS: 256;
+/**
+ * Completion cap for the yes/no call. High enough that a reasoning model's
+ * scratchpad does not consume the whole answer. `reasoning_effort` is also
+ * sent as `low`.
+ */
+export const DEFAULT_FILTER_MAX_OUTPUT_TOKENS: 1024;
+/** Sent on the filter call so reasoning models keep the yes/no inside the budget. */
+export const DEFAULT_FILTER_REASONING_EFFORT: "low";
+/**
+ * Bumped when the system prompt changes, and included in the cache key so an
+ * old judgment is not reused for a new prompt.
+ */
+export const FILTER_PROMPT_VERSION: 1;
+/**
+ * Lockfiles and generated paths skipped unless `ignore` is `false` or a custom list.
+ * Patterns are case-insensitive globs (`**` crosses directories, `*` does not).
+ */
+export const DEFAULT_IGNORE_PATTERNS: string[];
 /**
  * @typedef {object} RelevanceDecision
  * @property {string} path
@@ -123,8 +155,8 @@ export const DEFAULT_FILTER_MAX_OUTPUT_TOKENS: 256;
  * @property {number} promptTokens
  * @property {number} completionTokens
  * @property {boolean} cached true when this judgment was reused (a cache hit, or a later path in a shared request)
- * @property {'binary' | 'oversize' | 'truncated' | null} skippedReason
- *   set when the file was not sent in full
+ * @property {'binary' | 'oversize' | 'truncated' | 'ignored' | null} skippedReason
+ *   set when the file was not sent in full. `ignored` is a lockfile or generated path.
  * @property {string | null} error set when the call threw; the file is still included
  */
 /**
@@ -136,6 +168,8 @@ export const DEFAULT_FILTER_MAX_OUTPUT_TOKENS: 256;
  * @property {number} billedTokens sum of `tokens` on decisions that were not cache hits
  * @property {number} billedPromptTokens
  * @property {number} billedCompletionTokens
+ * @property {number} failedOpen files included because the call failed, the answer
+ *   was empty, or the answer was ambiguous
  */
 /**
  * Record stored in a cache. Snake_case so a JSON file matches the Python cache.
@@ -164,9 +198,11 @@ export class RelevanceCache {
      * @param {string} task
      * @param {string} content original file text
      * @param {string} [variant]
+     * @param {number} [maxOutputTokens] completion cap, so a larger budget is a different key
+     * @param {number} [promptVersion] {@link FILTER_PROMPT_VERSION}
      * @returns {Promise<string>}
      */
-    static makeKey(model: string, task: string, content: string, variant?: string): Promise<string>;
+    static makeKey(model: string, task: string, content: string, variant?: string, maxOutputTokens?: number, promptVersion?: number): Promise<string>;
     /**
      * @param {string} [path] JSON file. Omit for memory only.
      *   Loaded on the first read. Corrupt files are ignored.
@@ -228,9 +264,9 @@ export type RelevanceDecision = {
      */
     cached: boolean;
     /**
-     *   set when the file was not sent in full
+     *   set when the file was not sent in full. `ignored` is a lockfile or generated path.
      */
-    skippedReason: "binary" | "oversize" | "truncated" | null;
+    skippedReason: "binary" | "oversize" | "truncated" | "ignored" | null;
     /**
      * set when the call threw; the file is still included
      */
@@ -256,6 +292,11 @@ export type FilterRelevantResult = {
     billedTokens: number;
     billedPromptTokens: number;
     billedCompletionTokens: number;
+    /**
+     * files included because the call failed, the answer
+     * was empty, or the answer was ambiguous
+     */
+    failedOpen: number;
 };
 /**
  * Record stored in a cache. Snake_case so a JSON file matches the Python cache.

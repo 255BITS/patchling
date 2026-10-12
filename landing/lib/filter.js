@@ -18,7 +18,7 @@ import { callLlm as defaultCallLlm, resolveApiKey, resolveBaseUrl } from './llm.
 import { getEnv } from './env.js';
 
 /** Cheap default for yes/no classification. Override with GPTDIFF_FILTER_MODEL. */
-export const DEFAULT_FILTER_MODEL = 'gemini-2.0-flash';
+export const DEFAULT_FILTER_MODEL = 'xiaomi/mimo-v2.6-flash';
 
 /** In-flight classifications per call when `concurrency` is omitted. */
 export const DEFAULT_FILTER_CONCURRENCY = 8;
@@ -29,8 +29,57 @@ export const DEFAULT_FILTER_MAX_BYTES = 200_000;
 /** Input-token cap (characters / 4 when no tokenizer is bundled). `0` or `null` disables it. */
 export const DEFAULT_FILTER_MAX_TOKENS = 12_000;
 
-/** Completion cap for the yes/no call. */
-export const DEFAULT_FILTER_MAX_OUTPUT_TOKENS = 256;
+/**
+ * Completion cap for the yes/no call. High enough that a reasoning model's
+ * scratchpad does not consume the whole answer. `reasoning_effort` is also
+ * sent as `low`.
+ */
+export const DEFAULT_FILTER_MAX_OUTPUT_TOKENS = 1024;
+
+/** Sent on the filter call so reasoning models keep the yes/no inside the budget. */
+export const DEFAULT_FILTER_REASONING_EFFORT = 'low';
+
+/**
+ * Bumped when the system prompt changes, and included in the cache key so an
+ * old judgment is not reused for a new prompt.
+ */
+export const FILTER_PROMPT_VERSION = 1;
+
+/**
+ * Lockfiles and generated paths skipped unless `ignore` is `false` or a custom list.
+ * Patterns are case-insensitive globs (`**` crosses directories, `*` does not).
+ */
+export const DEFAULT_IGNORE_PATTERNS = [
+  '**/package-lock.json',
+  '**/yarn.lock',
+  '**/pnpm-lock.yaml',
+  '**/bun.lock',
+  '**/bun.lockb',
+  '**/npm-shrinkwrap.json',
+  '**/Cargo.lock',
+  '**/Gemfile.lock',
+  '**/poetry.lock',
+  '**/Pipfile.lock',
+  '**/composer.lock',
+  '**/go.sum',
+  '**/uv.lock',
+  '**/pdm.lock',
+  '**/flake.lock',
+  '**/pubspec.lock',
+  '**/packages.lock.json',
+  '**/Package.resolved',
+  '**/*.min.js',
+  '**/*.min.css',
+  '**/*.map',
+  '**/dist/**',
+  '**/build/**',
+  '**/.next/**',
+  '**/coverage/**',
+  '**/__pycache__/**',
+  '**/*.pyc',
+  '**/*.pyo',
+  '**/*.generated.*',
+];
 
 const POLICIES = ['include', 'exclude', 'truncate'];
 
@@ -58,8 +107,8 @@ const SYSTEM_PROMPT = (
  * @property {number} promptTokens
  * @property {number} completionTokens
  * @property {boolean} cached true when this judgment was reused (a cache hit, or a later path in a shared request)
- * @property {'binary' | 'oversize' | 'truncated' | null} skippedReason
- *   set when the file was not sent in full
+ * @property {'binary' | 'oversize' | 'truncated' | 'ignored' | null} skippedReason
+ *   set when the file was not sent in full. `ignored` is a lockfile or generated path.
  * @property {string | null} error set when the call threw; the file is still included
  */
 
@@ -72,6 +121,8 @@ const SYSTEM_PROMPT = (
  * @property {number} billedTokens sum of `tokens` on decisions that were not cache hits
  * @property {number} billedPromptTokens
  * @property {number} billedCompletionTokens
+ * @property {number} failedOpen files included because the call failed, the answer
+ *   was empty, or the answer was ambiguous
  */
 
 /**
@@ -114,12 +165,21 @@ export class RelevanceCache {
    * @param {string} task
    * @param {string} content original file text
    * @param {string} [variant]
+   * @param {number} [maxOutputTokens] completion cap, so a larger budget is a different key
+   * @param {number} [promptVersion] {@link FILTER_PROMPT_VERSION}
    * @returns {Promise<string>}
    */
-  static async makeKey(model, task, content, variant = 'full') {
+  static async makeKey(
+    model,
+    task,
+    content,
+    variant = 'full',
+    maxOutputTokens = DEFAULT_FILTER_MAX_OUTPUT_TOKENS,
+    promptVersion = FILTER_PROMPT_VERSION,
+  ) {
     const taskHash = await sha256(task);
     const contentHash = await sha256(content);
-    return `${model}\n${taskHash}\n${contentHash}\n${variant}`;
+    return `${model}\n${taskHash}\n${contentHash}\n${variant}\n${maxOutputTokens}\n${promptVersion}`;
   }
 
   /**
@@ -516,7 +576,7 @@ function decisionFromRecord(path, record, cached) {
 /**
  * @param {string} path
  * @param {'yes' | 'no'} decision
- * @param {'binary' | 'oversize'} skippedReason
+ * @param {'binary' | 'oversize' | 'ignored'} skippedReason
  * @param {string} reason
  * @returns {RelevanceDecision}
  */
@@ -575,6 +635,120 @@ function usageAndText(response) {
 function errorMessage(err) {
   if (err instanceof Error) return `${err.name}: ${err.message}`;
   return String(err);
+}
+
+/**
+ * Timeouts and HTTP 5xx (including 503). Other failures fail open immediately.
+ * @param {unknown} err
+ * @returns {boolean}
+ */
+function isTransientFilterError(err) {
+  const status = err && typeof err === 'object'
+    ? (/** @type {{ status?: number, statusCode?: number }} */ (err).status
+      ?? /** @type {{ statusCode?: number }} */ (err).statusCode)
+    : undefined;
+  if (typeof status === 'number' && status >= 500 && status <= 599) return true;
+  const code = err && typeof err === 'object'
+    ? (/** @type {{ code?: string, cause?: { code?: string } }} */ (err).code
+      || /** @type {{ cause?: { code?: string } }} */ (err).cause?.code)
+    : undefined;
+  if (typeof code === 'string' && /^(ETIMEDOUT|ECONNABORTED|UND_ERR_CONNECT_TIMEOUT|UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT|UND_ERR_SOCKET)$/.test(code)) {
+    return true;
+  }
+  const name = err && typeof err === 'object' ? /** @type {{ name?: string }} */ (err).name : '';
+  if (name === 'TimeoutError' || name === 'AbortError') return true;
+  const message = errorMessage(err);
+  if (/timeout|timed out/i.test(message)) return true;
+  if (/\b5\d\d\b/.test(message)) return true;
+  return false;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {number}
+ */
+function resolveRetries(value) {
+  if (value === undefined) return 2;
+  const n = Math.trunc(Number(value));
+  if (!Number.isFinite(n) || n < 0) throw new Error('retries must be >= 0');
+  return n;
+}
+
+/**
+ * @param {string} pattern
+ * @returns {RegExp}
+ */
+function globToRegExp(pattern) {
+  let re = '';
+  let i = 0;
+  const src = pattern.replace(/\\/g, '/').toLowerCase();
+  while (i < src.length) {
+    if (src.startsWith('**/', i)) {
+      re += '(?:.*/)?';
+      i += 3;
+      continue;
+    }
+    if (src.startsWith('**', i)) {
+      re += '.*';
+      i += 2;
+      continue;
+    }
+    const ch = src[i];
+    if (ch === '*') re += '[^/]*';
+    else {
+      if (/[\\^$+?.()|{}[\]]/.test(ch)) re += '\\';
+      re += ch;
+    }
+    i += 1;
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/**
+ * @param {string} filePath
+ * @param {string[]} patterns
+ * @returns {boolean}
+ */
+export function isIgnoredPath(filePath, patterns = DEFAULT_IGNORE_PATTERNS) {
+  const normalized = String(filePath).replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+  return patterns.some((pattern) => globToRegExp(pattern).test(normalized));
+}
+
+/**
+ * @param {unknown} ignore
+ * @returns {string[]}
+ */
+function resolveIgnore(ignore) {
+  if (ignore === false || ignore === null) return [];
+  if (ignore === undefined || ignore === true) return DEFAULT_IGNORE_PATTERNS;
+  if (Array.isArray(ignore)) return ignore.map(String);
+  throw new TypeError('ignore must be true, false, or an array of patterns');
+}
+
+/**
+ * Included without a definitive yes/no: a thrown call, an empty answer, or an
+ * ambiguous answer.
+ * @param {RelevanceDecision} decision
+ * @returns {boolean}
+ */
+function isFailedOpen(decision) {
+  if (!decision) return false;
+  if (decision.error) return true;
+  return typeof decision.reason === 'string'
+    && decision.reason.startsWith('ambiguous answer; included by default');
+}
+
+/**
+ * A stored judgment is reusable only when it is a definitive yes or no.
+ * Fallbacks and errors are not, even if an older cache file still holds them.
+ * @param {RelevanceCacheRecord | undefined} hit
+ * @returns {boolean}
+ */
+function reusableHit(hit) {
+  if (!hit || (hit.decision !== 'yes' && hit.decision !== 'no') || hit.error) return false;
+  const reason = hit.reason || '';
+  if (reason.startsWith('ambiguous answer') || reason.startsWith('error; included by default')) return false;
+  return true;
 }
 
 /**
@@ -648,6 +822,12 @@ async function cachePut(store, key, record) {
  * @param {'include' | 'exclude' | 'truncate'} [opts.onOversize] default `truncate`
  * @param {'include' | 'exclude' | 'truncate'} [opts.onBinary] default `exclude`
  * @param {number} [opts.maxOutputTokens] completion cap (default {@link DEFAULT_FILTER_MAX_OUTPUT_TOKENS})
+ * @param {string | null} [opts.reasoningEffort] default {@link DEFAULT_FILTER_REASONING_EFFORT}; `null` omits it
+ * @param {number} [opts.retries] extra attempts after a timeout or HTTP 5xx (default 2)
+ * @param {number} [opts.retryBaseMs] backoff base in ms (default 200, doubles, capped at 30s)
+ * @param {boolean | string[] | null} [opts.ignore] lockfile and generated-file patterns.
+ *   `true` or omitted uses {@link DEFAULT_IGNORE_PATTERNS}. `false` or `null` classifies every path.
+ *   An array replaces the default list.
  * @param {(decision: RelevanceDecision) => void} [opts.onDecision] called as each file finishes (completion order)
  * @param {string} [opts.apiKey] `GPTDIFF_LLM_API_KEY` when omitted
  * @param {string} [opts.baseUrl] `GPTDIFF_LLM_BASE_URL` when omitted
@@ -672,6 +852,12 @@ export async function filterRelevant(files, task, opts = {}) {
   const maxOutputTokens = opts.maxOutputTokens === undefined
     ? DEFAULT_FILTER_MAX_OUTPUT_TOKENS
     : opts.maxOutputTokens;
+  const reasoningEffort = opts.reasoningEffort === undefined
+    ? DEFAULT_FILTER_REASONING_EFFORT
+    : opts.reasoningEffort;
+  const retries = resolveRetries(opts.retries);
+  const retryBaseMs = opts.retryBaseMs === undefined ? 200 : Math.max(0, Number(opts.retryBaseMs) || 0);
+  const ignorePatterns = resolveIgnore(opts.ignore);
 
   const model = resolveFilterModel(opts.model);
   const store = resolveCache(opts.cache);
@@ -710,6 +896,18 @@ export async function filterRelevant(files, task, opts = {}) {
   }
 
   for (const [path, content] of entries) {
+    if (isIgnoredPath(path, ignorePatterns)) {
+      const made = skipDecision(
+        path,
+        'no',
+        'ignored',
+        'lockfile or generated file; excluded without a model call',
+      );
+      byPath.set(path, made);
+      emit(made);
+      continue;
+    }
+
     const binary = isBinaryContent(content);
     const text = coerceText(content);
     if (binary) {
@@ -717,7 +915,7 @@ export async function filterRelevant(files, task, opts = {}) {
         const nbytes = content instanceof Uint8Array ? content.length : utf8ByteLength(text);
         const note = 'Note: this file is binary. Its bytes are not shown; judge relevance from the path and this note.';
         const body = `[binary file, ${nbytes} bytes, contents omitted]`;
-        const key = await RelevanceCache.makeKey(model, task, text, 'binary-preview');
+        const key = await RelevanceCache.makeKey(model, task, text, 'binary-preview', maxOutputTokens);
         enqueue(key, { path, body, note, skippedReason: 'truncated' });
       } else {
         const decision = onBinary === 'include' ? 'yes' : 'no';
@@ -741,7 +939,7 @@ export async function filterRelevant(files, task, opts = {}) {
           + `(${nBytes} bytes, ${nTokens} tokens). Judge from the portion shown.`
         );
         const variant = `truncated:${rawLimitTag(opts.maxTokens, DEFAULT_FILTER_MAX_TOKENS)}:${rawLimitTag(opts.maxBytes, DEFAULT_FILTER_MAX_BYTES)}`;
-        const key = await RelevanceCache.makeKey(model, task, text, variant);
+        const key = await RelevanceCache.makeKey(model, task, text, variant, maxOutputTokens);
         enqueue(key, { path, body, note, skippedReason: 'truncated' });
       } else {
         const decision = onOversize === 'include' ? 'yes' : 'no';
@@ -758,7 +956,7 @@ export async function filterRelevant(files, task, opts = {}) {
       continue;
     }
 
-    const key = await RelevanceCache.makeKey(model, task, text, 'full');
+    const key = await RelevanceCache.makeKey(model, task, text, 'full', maxOutputTokens);
     enqueue(key, { path, body: text, note: null, skippedReason: null });
   }
 
@@ -771,7 +969,7 @@ export async function filterRelevant(files, task, opts = {}) {
   async function cached(key) {
     if (!store) return false;
     const hit = await cacheGet(store, key);
-    return !!(hit && (hit.decision === 'yes' || hit.decision === 'no') && !hit.error);
+    return reusableHit(hit);
   }
 
   let needsCall = false;
@@ -796,7 +994,7 @@ export async function filterRelevant(files, task, opts = {}) {
     const items = groups.get(key);
     if (store) {
       const hit = await cacheGet(store, key);
-      if (hit && (hit.decision === 'yes' || hit.decision === 'no') && !hit.error) {
+      if (reusableHit(hit)) {
         for (const item of items) {
           const decision = decisionFromRecord(item.path, { ...hit, cache_key: key }, true);
           byPath.set(item.path, decision);
@@ -811,39 +1009,57 @@ export async function filterRelevant(files, task, opts = {}) {
     let promptTokens;
     let completionTokens;
     let totalTokens;
-    try {
-      const userPrompt = buildUserPrompt(task, items.map((item) => item.path), sample.body, sample.note);
-      let userContent = userPrompt;
-      if (model && model.includes('gemini')) userContent = `${SYSTEM_PROMPT}\n${userPrompt}`;
-      const response = await callLlm({
-        apiKey,
-        baseUrl,
-        model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userContent },
-        ],
-        maxTokens: maxOutputTokens,
-        temperature: 0,
-        budgetTokens: null,
-      });
-      ({ raw, promptTokens, completionTokens, tokens: totalTokens } = usageAndText(response));
-    } catch (err) {
-      const message = errorMessage(err);
-      for (const item of items) {
+    /** @type {unknown} */
+    let lastError = null;
+    const userPrompt = buildUserPrompt(task, items.map((item) => item.path), sample.body, sample.note);
+    let userContent = userPrompt;
+    if (model && model.includes('gemini')) userContent = `${SYSTEM_PROMPT}\n${userPrompt}`;
+    const attempts = retries + 1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        const response = await callLlm({
+          apiKey,
+          baseUrl,
+          model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: userContent },
+          ],
+          maxTokens: maxOutputTokens,
+          temperature: 0,
+          budgetTokens: null,
+          reasoningEffort: reasoningEffort || null,
+          maxRetries: 0,
+        });
+        ({ raw, promptTokens, completionTokens, tokens: totalTokens } = usageAndText(response));
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        const again = attempt + 1 < attempts && isTransientFilterError(err);
+        if (!again) break;
+        const wait = Math.min(retryBaseMs * 2 ** attempt, 30_000);
+        if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+    }
+    if (lastError) {
+      const message = errorMessage(lastError);
+      items.forEach((item, index) => {
         const decision = decisionObject({
           path: item.path,
           decision: 'yes',
           reason: `error; included by default: ${message}`,
           raw: null,
           tokens: 0,
-          cached: false,
+          promptTokens: 0,
+          completionTokens: 0,
+          cached: index > 0,
           skippedReason: item.skippedReason,
           error: message,
         });
         byPath.set(item.path, decision);
         emit(decision);
-      }
+      });
       return;
     }
 
@@ -852,28 +1068,36 @@ export async function filterRelevant(files, task, opts = {}) {
     let decisionName;
     /** @type {string} */
     let reason;
-    if (parsed.decision == null) {
+    /** @type {string | null} */
+    let error = null;
+    let cacheable = false;
+    if (parsed.decision == null && !parsed.cleaned) {
       decisionName = 'yes';
-      reason = parsed.cleaned
-        ? `ambiguous answer; included by default: ${parsed.cleaned}`
-        : 'ambiguous answer; included by default';
+      error = 'empty answer';
+      reason = `error; included by default: ${error}`;
+    } else if (parsed.decision == null) {
+      decisionName = 'yes';
+      reason = `ambiguous answer; included by default: ${parsed.cleaned}`;
     } else {
       decisionName = parsed.decision;
       reason = parsed.cleaned;
+      cacheable = true;
     }
-    /** @type {RelevanceCacheRecord} */
-    const record = {
-      decision: decisionName,
-      reason,
-      raw,
-      tokens: totalTokens,
-      prompt_tokens: promptTokens,
-      completion_tokens: completionTokens,
-      skipped_reason: sample.skippedReason,
-      error: null,
-      cache_key: key,
-    };
-    if (store) await cachePut(store, key, record);
+    if (store && cacheable) {
+      /** @type {RelevanceCacheRecord} */
+      const record = {
+        decision: decisionName,
+        reason,
+        raw,
+        tokens: totalTokens,
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        skipped_reason: sample.skippedReason,
+        error: null,
+        cache_key: key,
+      };
+      await cachePut(store, key, record);
+    }
     items.forEach((item, index) => {
       const decision = decisionObject({
         path: item.path,
@@ -885,7 +1109,7 @@ export async function filterRelevant(files, task, opts = {}) {
         completionTokens,
         cached: index > 0,
         skippedReason: item.skippedReason,
-        error: null,
+        error,
       });
       byPath.set(item.path, decision);
       emit(decision);
@@ -908,6 +1132,7 @@ export async function filterRelevant(files, task, opts = {}) {
     }
   }
   const errors = decisions.filter((decision) => decision.error);
+  const failedOpen = decisions.filter(isFailedOpen).length;
   let billedTokens = 0;
   let billedPromptTokens = 0;
   let billedCompletionTokens = 0;
@@ -925,6 +1150,7 @@ export async function filterRelevant(files, task, opts = {}) {
     billedTokens,
     billedPromptTokens,
     billedCompletionTokens,
+    failedOpen,
   };
 }
 
@@ -938,8 +1164,12 @@ export function formatFilterSummary(result, verbose = false) {
   const total = result.decisions.length;
   const kept = Object.keys(result.files).length;
   const errorCount = result.errors.length;
+  const failedOpen = Number.isFinite(result.failedOpen)
+    ? result.failedOpen
+    : result.decisions.filter(isFailedOpen).length;
   let line = `Relevance filter (${result.model}): kept ${kept}/${total} files, ${result.billedTokens} tokens`;
   if (errorCount) line += `, ${errorCount} error${errorCount === 1 ? '' : 's'}`;
+  if (failedOpen) line += `, ${failedOpen} failed open`;
   const lines = [line];
   for (const decision of result.decisions) {
     if (decision.error) {
@@ -977,6 +1207,7 @@ export async function dumpDecisions(result, path) {
     billedTokens: result.billedTokens,
     billedPromptTokens: result.billedPromptTokens,
     billedCompletionTokens: result.billedCompletionTokens,
+    failedOpen: result.failedOpen,
     errors: result.errors,
   };
   await fs.writeFile(destination, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');

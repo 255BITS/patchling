@@ -17,7 +17,12 @@ import {
   DEFAULT_FILTER_MAX_BYTES,
   DEFAULT_FILTER_MAX_TOKENS,
   DEFAULT_FILTER_MAX_OUTPUT_TOKENS,
+  DEFAULT_FILTER_REASONING_EFFORT,
   DEFAULT_FILTER_CONCURRENCY,
+  FILTER_PROMPT_VERSION,
+  DEFAULT_IGNORE_PATTERNS,
+  isIgnoredPath,
+  callLlm,
 } from '../src/index.js';
 import { setEnv } from '../src/env.js';
 
@@ -143,6 +148,8 @@ test('filterRelevant keeps only yes files and reports camelCase decisions', asyn
     assert.equal(call.baseUrl, 'https://example.test/v1');
     assert.equal(call.temperature, 0);
     assert.equal(call.maxTokens, DEFAULT_FILTER_MAX_OUTPUT_TOKENS);
+    assert.equal(call.reasoningEffort, 'low');
+    assert.equal(call.maxRetries, 0);
     assert.match(call.messages[1].content, /Task:\nUpdate keep\(\)/);
     assert.match(call.messages[1].content, /Is this file relevant to the task\? yes\/no/);
   }
@@ -170,9 +177,11 @@ test('ambiguous answers and thrown errors include the file', async () => {
   assert.match(by['broken.py'].reason, /connection reset/);
   assert.equal(by['broken.py'].tokens, 0);
   assert.deepEqual(result.errors, [by['broken.py']]);
+  assert.equal(result.failedOpen, 2);
   const summary = formatFilterSummary(result);
   assert.match(summary, /connection reset/);
   assert.match(summary, /included by default/);
+  assert.match(summary, /2 failed open/);
 });
 
 test('errors are not cached', async () => {
@@ -213,8 +222,10 @@ test('memory and disk cache round-trip', async () => {
   assert.equal(stored.version, 1);
   assert.equal(Object.keys(stored.entries).length, 1);
   const [storedKey, storedValue] = Object.entries(stored.entries)[0];
-  assert.equal(storedKey.split('\n').length, 4);
+  assert.equal(storedKey.split('\n').length, 6);
   assert.equal(storedKey.split('\n')[3], 'full');
+  assert.equal(storedKey.split('\n')[4], String(DEFAULT_FILTER_MAX_OUTPUT_TOKENS));
+  assert.equal(storedKey.split('\n')[5], String(FILTER_PROMPT_VERSION));
   assert.equal(storedValue.decision, 'yes');
   assert.equal(storedValue.prompt_tokens, 5);
   assert.equal(storedValue.skipped_reason, null);
@@ -548,9 +559,13 @@ test('invalid arguments throw', async () => {
     () => filterRelevant({ 'a.py': 1 }, 'task', { cache: false, apiKey: 'k', callLlm: llm(['yes']).fn }),
     TypeError,
   );
+  await assert.rejects(
+    () => filterRelevant({ 'a.py': 'x' }, 'task', { cache: false, apiKey: 'k', ignore: 'nope' }),
+    TypeError,
+  );
 });
 
-test('model defaults to GPTDIFF_FILTER_MODEL, else gemini-2.0-flash', async () => withEnv(async () => {
+test('model defaults to GPTDIFF_FILTER_MODEL, else xiaomi/mimo-v2.6-flash', async () => withEnv(async () => {
   const prevFilter = process.env.GPTDIFF_FILTER_MODEL;
   const prevBase = process.env.GPTDIFF_LLM_BASE_URL;
   delete process.env.GPTDIFF_FILTER_MODEL;
@@ -574,13 +589,22 @@ test('model defaults to GPTDIFF_FILTER_MODEL, else gemini-2.0-flash', async () =
       callLlm: mock.fn,
     });
     assert.equal(seen[0].model, DEFAULT_FILTER_MODEL);
-    assert.equal(fromEnv.model, 'gemini-2.0-flash');
+    assert.equal(fromEnv.model, 'xiaomi/mimo-v2.6-flash');
     assert.equal(seen[0].baseUrl, 'https://example.test/v1/');
     assert.equal(seen[0].apiKey, 'from-arg');
-    assert.ok(seen[0].messages[1].content.startsWith('You are a relevance filter'));
+    assert.equal(seen[0].reasoningEffort, 'low');
+    assert.ok(seen[0].messages[0].content.startsWith('You are a relevance filter'));
+    assert.ok(seen[0].messages[1].content.startsWith('Task:\n'));
     assert.equal(named.model, 'env-filter-model');
     assert.equal(seen[1].model, 'env-filter-model');
-    assert.equal(seen[1].messages[1].content.startsWith('You are a relevance filter'), false);
+    const gemini = llm(() => response('yes'));
+    await filterRelevant({ 'a.py': 'x = 1\n' }, 'task', {
+      model: 'gemini-2.0-flash',
+      cache: false,
+      apiKey: 'from-arg',
+      callLlm: gemini.fn,
+    });
+    assert.ok(gemini.calls[0].messages[1].content.startsWith('You are a relevance filter'));
   } finally {
     setEnv('GPTDIFF_FILTER_MODEL', undefined);
     setEnv('GPTDIFF_LLM_BASE_URL', undefined);
@@ -589,10 +613,12 @@ test('model defaults to GPTDIFF_FILTER_MODEL, else gemini-2.0-flash', async () =
     if (prevBase === undefined) delete process.env.GPTDIFF_LLM_BASE_URL;
     else process.env.GPTDIFF_LLM_BASE_URL = prevBase;
   }
-  assert.equal(DEFAULT_FILTER_MODEL, 'gemini-2.0-flash');
+  assert.equal(DEFAULT_FILTER_MODEL, 'xiaomi/mimo-v2.6-flash');
   assert.equal(DEFAULT_FILTER_MAX_BYTES, 200_000);
   assert.equal(DEFAULT_FILTER_MAX_TOKENS, 12_000);
-  assert.equal(DEFAULT_FILTER_MAX_OUTPUT_TOKENS, 256);
+  assert.equal(DEFAULT_FILTER_MAX_OUTPUT_TOKENS, 1024);
+  assert.equal(DEFAULT_FILTER_REASONING_EFFORT, 'low');
+  assert.equal(FILTER_PROMPT_VERSION, 1);
   assert.equal(DEFAULT_FILTER_CONCURRENCY, 8);
   assert.equal(isBinaryContent('hello\0world'), true);
   assert.equal(isBinaryContent('plain text'), false);
@@ -657,4 +683,230 @@ test('buildEnvironment includes only yes files when decisions are passed', () =>
   });
   assert.match(includedByError, /File: main\.py/);
   assert.doesNotMatch(includedByError, /greet/);
+});
+
+function statusError(status) {
+  const err = new Error(`LLM request failed (${status}) from example: unavailable`);
+  err.status = status;
+  return err;
+}
+
+test('an empty answer is an error, fails open, and is not cached', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    if (n === 1) return response('<think>no, skip this file</think>');
+    return response('no');
+  });
+  const cache = new RelevanceCache();
+  const files = { 'a.py': 'v = 1\n' };
+  const first = await filterRelevant(files, 'task', {
+    model: 'm', cache, apiKey: 'k', callLlm: mock.fn, retryBaseMs: 0,
+  });
+  assert.equal(first.decisions[0].decision, 'yes');
+  assert.equal(first.decisions[0].error, 'empty answer');
+  assert.equal(first.failedOpen, 1);
+  assert.equal('a.py' in first.files, true);
+  assert.match(formatFilterSummary(first), /1 failed open/);
+  const stored = await cache.get(await RelevanceCache.makeKey('m', 'task', 'v = 1\n', 'full'));
+  assert.equal(stored, undefined);
+
+  const second = await filterRelevant(files, 'task', {
+    model: 'm', cache, apiKey: 'k', callLlm: mock.fn, retryBaseMs: 0,
+  });
+  assert.equal(n, 2);
+  assert.equal(second.decisions[0].decision, 'no');
+  assert.equal(second.decisions[0].error, null);
+  assert.equal(second.decisions[0].cached, false);
+  assert.equal(second.failedOpen, 0);
+});
+
+test('ambiguous answers fail open and are not cached', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    return n === 1 ? response('maybe later') : response('no — unrelated');
+  });
+  const cache = createMemoryCache();
+  const opts = { model: 'm', cache, apiKey: 'k', callLlm: mock.fn, retryBaseMs: 0 };
+  const first = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', opts);
+  const second = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', opts);
+  assert.equal(n, 2);
+  assert.equal(first.decisions[0].decision, 'yes');
+  assert.equal(first.decisions[0].error, null);
+  assert.match(first.decisions[0].reason, /ambiguous/);
+  assert.equal(first.failedOpen, 1);
+  assert.equal(second.decisions[0].decision, 'no');
+  assert.equal(second.decisions[0].cached, false);
+});
+
+test('a stored fallback is not reused', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    return response('no');
+  });
+  const cache = new RelevanceCache();
+  const body = 'v = 1\n';
+  const key = await RelevanceCache.makeKey('m', 'task', body, 'full');
+  await cache.put(key, {
+    decision: 'yes',
+    reason: 'ambiguous answer; included by default: maybe',
+    error: null,
+    tokens: 4,
+  });
+  const result = await filterRelevant({ 'a.py': body }, 'task', {
+    model: 'm', cache, apiKey: 'k', callLlm: mock.fn,
+  });
+  assert.equal(n, 1);
+  assert.equal(result.decisions[0].decision, 'no');
+  assert.equal(result.decisions[0].cached, false);
+});
+
+test('the output-token limit is part of the cache key', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    return response('yes');
+  });
+  const cache = new RelevanceCache();
+  const files = { 'a.py': 'v = 1\n' };
+  const opts = { model: 'm', cache, apiKey: 'k', callLlm: mock.fn };
+  await filterRelevant(files, 'task', { ...opts, maxOutputTokens: 128 });
+  await filterRelevant(files, 'task', { ...opts, maxOutputTokens: 2048 });
+  assert.equal(n, 2);
+  await filterRelevant(files, 'task', { ...opts, maxOutputTokens: 128 });
+  assert.equal(n, 2);
+});
+
+test('transient 503 and timeouts are retried with backoff', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    if (n < 3) return statusError(503);
+    return response('no');
+  });
+  const result = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', {
+    ...baseOpts, callLlm: mock.fn, retryBaseMs: 0,
+  });
+  assert.equal(n, 3);
+  assert.equal(result.decisions[0].decision, 'no');
+  assert.equal(result.decisions[0].error, null);
+  assert.equal(result.failedOpen, 0);
+
+  let timeouts = 0;
+  const timed = llm(() => {
+    timeouts += 1;
+    if (timeouts === 1) {
+      const err = new Error('request timed out');
+      err.name = 'TimeoutError';
+      return err;
+    }
+    return response('yes');
+  });
+  const afterTimeout = await filterRelevant({ 'a.py': 'v = 2\n' }, 'task', {
+    ...baseOpts, callLlm: timed.fn, retryBaseMs: 0,
+  });
+  assert.equal(timeouts, 2);
+  assert.equal(afterTimeout.decisions[0].decision, 'yes');
+  assert.equal(afterTimeout.decisions[0].error, null);
+});
+
+test('a non-transient error is not retried and still fails open', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    return new Error('connection reset');
+  });
+  const result = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', {
+    ...baseOpts, callLlm: mock.fn, retries: 4, retryBaseMs: 0,
+  });
+  assert.equal(n, 1);
+  assert.equal(result.decisions[0].decision, 'yes');
+  assert.match(result.decisions[0].error, /connection reset/);
+  assert.equal(result.failedOpen, 1);
+  assert.equal(result.files['a.py'], 'v = 1\n');
+});
+
+test('lockfiles and generated files are skipped unless ignore is configured', async () => {
+  assert.equal(isIgnoredPath('package-lock.json', DEFAULT_IGNORE_PATTERNS), true);
+  assert.equal(isIgnoredPath('app/yarn.lock', DEFAULT_IGNORE_PATTERNS), true);
+  assert.equal(isIgnoredPath('src/app.js', DEFAULT_IGNORE_PATTERNS), false);
+  assert.equal(isIgnoredPath('dist/app.js'), true);
+  assert.equal(isIgnoredPath('web/dist/main.min.js'), true);
+  assert.equal(isIgnoredPath('src/app.min.js'), true);
+  assert.equal(isIgnoredPath('keep.py'), false);
+
+  const seen = [];
+  const mock = llm((req) => {
+    seen.push(...pathsOf(req));
+    return response('yes');
+  });
+  const files = {
+    'src/app.js': 'export const n = 1;\n',
+    'package-lock.json': '{ "lock": true }\n',
+    'dist/app.js': 'bundled\n',
+    'src/app.min.js': 'min\n',
+  };
+  const skipped = await filterRelevant(files, 'rename n', { ...baseOpts, callLlm: mock.fn });
+  assert.deepEqual(seen, ['src/app.js']);
+  assert.deepEqual(Object.keys(skipped.files), ['src/app.js']);
+  const by = Object.fromEntries(skipped.decisions.map((d) => [d.path, d]));
+  assert.equal(by['package-lock.json'].decision, 'no');
+  assert.equal(by['package-lock.json'].skippedReason, 'ignored');
+  assert.equal(by['dist/app.js'].skippedReason, 'ignored');
+  assert.equal(by['src/app.min.js'].skippedReason, 'ignored');
+  assert.equal(by['src/app.js'].skippedReason, null);
+
+  seen.length = 0;
+  const sent = await filterRelevant(
+    { 'package-lock.json': '{}\n', 'secret.txt': 'nope\n', 'src/app.js': 'ok\n' },
+    'task',
+    { ...baseOpts, ignore: ['**/secret.txt'], callLlm: mock.fn },
+  );
+  assert.ok(seen.includes('package-lock.json'));
+  assert.ok(seen.includes('src/app.js'));
+  assert.equal(seen.includes('secret.txt'), false);
+  assert.equal(sent.decisions.find((d) => d.path === 'secret.txt').skippedReason, 'ignored');
+
+  seen.length = 0;
+  await filterRelevant({ 'package-lock.json': '{}\n' }, 'task', {
+    ...baseOpts, ignore: false, callLlm: mock.fn,
+  });
+  assert.deepEqual(seen, ['package-lock.json']);
+});
+
+test('callLlm sends reasoning_effort only when the filter asks for it', async () => {
+  /** @type {Record<string, unknown>[]} */
+  const bodies = [];
+  const fetchImpl = async (_url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return {
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'yes' } }], usage: { total_tokens: 1 } }),
+      text: async () => '',
+      headers: { get: () => null },
+    };
+  };
+  await callLlm({
+    apiKey: 'k',
+    baseUrl: 'https://example.test/v1',
+    model: 'm',
+    messages: [{ role: 'user', content: 'hi' }],
+    maxTokens: 1024,
+    temperature: 0,
+    reasoningEffort: 'low',
+    fetchImpl,
+  });
+  await callLlm({
+    apiKey: 'k',
+    baseUrl: 'https://example.test/v1',
+    model: 'm',
+    messages: [{ role: 'user', content: 'hi' }],
+    temperature: 0,
+    fetchImpl,
+  });
+  assert.equal(bodies[0].reasoning_effort, 'low');
+  assert.equal(bodies[0].max_tokens, 1024);
+  assert.equal('reasoning_effort' in bodies[1], false);
 });

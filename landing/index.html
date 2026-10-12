@@ -383,7 +383,7 @@
       </div>
       <div class="filterbar">
         <label for="filteron"><input type="checkbox" id="filteron" /> Relevance filter</label>
-        <span class="hint">Before the diff, a cheap model answers yes or no for each file. Binary files are excluded. Oversized files are truncated for the check; a yes still sends the original text.</span>
+        <span class="hint">Before the diff, a cheap model answers yes or no for each file. Binary files, lockfiles, and generated files are excluded. Oversized files are truncated for the check; a yes still sends the original text.</span>
       </div>
       <div class="modelrow" id="filtermodelrow" style="display:none">
         <span style="color:var(--muted)">decision model</span>
@@ -606,7 +606,7 @@ diff = generate_diff(env, task)
 updated = smartapply(diff, files)</pre>
     </div>
   </div>
-  <p class="lead" style="margin-top:1rem">Each decision is <code class="inline">{ path, decision, reason, raw, tokens, promptTokens, completionTokens, cached, skippedReason, error }</code>. <code class="inline">decision</code> is <code class="inline">yes</code> or <code class="inline">no</code>. <code class="inline">skippedReason</code> is <code class="inline">binary</code>, <code class="inline">oversize</code>, <code class="inline">truncated</code>, or null. The default model is <code class="inline">gemini-2.0-flash</code> (<code class="inline">GPTDIFF_FILTER_MODEL</code>). The cache key is the model, a hash of the task, a hash of the original contents, and a truncation tag. Python uses the same fields in snake_case (<code class="inline">skipped_reason</code>, <code class="inline">prompt_tokens</code>, <code class="inline">max_bytes</code>, <code class="inline">max_tokens</code>, <code class="inline">on_oversize</code>, <code class="inline">on_binary</code>).</p>
+  <p class="lead" style="margin-top:1rem">Each decision is <code class="inline">{ path, decision, reason, raw, tokens, promptTokens, completionTokens, cached, skippedReason, error }</code>. <code class="inline">decision</code> is <code class="inline">yes</code> or <code class="inline">no</code>. <code class="inline">skippedReason</code> is <code class="inline">binary</code>, <code class="inline">oversize</code>, <code class="inline">truncated</code>, <code class="inline">ignored</code>, or null. The default model is <code class="inline">xiaomi/mimo-v2.6-flash</code> (<code class="inline">GPTDIFF_FILTER_MODEL</code>). The cache key is the model, a hash of the task, a hash of the original contents, a truncation tag, the output-token limit, and the prompt version. Python uses the same fields in snake_case (<code class="inline">skipped_reason</code>, <code class="inline">prompt_tokens</code>, <code class="inline">max_bytes</code>, <code class="inline">max_tokens</code>, <code class="inline">on_oversize</code>, <code class="inline">on_binary</code>).</p>
 </section>
 
 <section id="why">
@@ -1559,7 +1559,7 @@ function filesForDiff(map, decisions) {
 function renderDecision(d) {
   const row = document.createElement("div");
   row.className = "drow";
-  const skipped = d.skippedReason === "binary" || d.skippedReason === "oversize";
+  const skipped = d.skippedReason === "binary" || d.skippedReason === "oversize" || d.skippedReason === "ignored";
   const badge = document.createElement("span");
   badge.className = "badge " + (skipped ? "skip" : d.decision === "yes" ? "yes" : "no");
   badge.textContent = skipped ? "skipped" : d.decision;

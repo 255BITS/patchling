@@ -64,7 +64,7 @@ Configuration comes from environment variables (Node) or `setEnv(...)` overrides
 | `GPTDIFF_LLM_API_KEY` | NanoGPT API key (`sk-nano-…`) | — (required for live calls) |
 | `GPTDIFF_LLM_BASE_URL` | OpenAI-compatible base URL | `https://nano-gpt.com/api/v1/` |
 | `GPTDIFF_MODEL` | Model id | `xiaomi/mimo-v2.5-pro-ultraspeed` |
-| `GPTDIFF_FILTER_MODEL` | Cheap model for `filterRelevant` | `gemini-2.0-flash` |
+| `GPTDIFF_FILTER_MODEL` | Cheap model for `filterRelevant` | `xiaomi/mimo-v2.6-flash` |
 
 ```js
 import { setEnv } from 'patchling';
@@ -109,7 +109,7 @@ Opt-in pass for a large file map. Each candidate file is sent with the task to a
 import { filterRelevant, buildEnvironment, generateDiff, smartapply } from 'patchling';
 
 const result = await filterRelevant(files, task, {
-  // model: 'gemini-2.0-flash',            // GPTDIFF_FILTER_MODEL, else this default
+  // model: 'xiaomi/mimo-v2.6-flash',       // GPTDIFF_FILTER_MODEL, else this default
   concurrency: 8,                           // max in-flight calls
   // cache: null,                           // omit for a fresh in-memory cache; a path string persists it
   // maxBytes: 200000,                      // 0 or null disables
@@ -122,18 +122,21 @@ const diff = await generateDiff(buildEnvironment(result.files), task, { model })
 const next = await smartapply(diff, files);
 ```
 
-- `opts.model`, `opts.apiKey`, `opts.baseUrl` — same key and base URL resolution as `generateDiff` (`GPTDIFF_LLM_API_KEY`, `GPTDIFF_LLM_BASE_URL`). The model falls back to `GPTDIFF_FILTER_MODEL`, then `gemini-2.0-flash`.
+- `opts.model`, `opts.apiKey`, `opts.baseUrl` — same key and base URL resolution as `generateDiff` (`GPTDIFF_LLM_API_KEY`, `GPTDIFF_LLM_BASE_URL`). The model falls back to `GPTDIFF_FILTER_MODEL`, then `xiaomi/mimo-v2.6-flash`.
 - `opts.concurrency` — at most this many classifications in flight (default 8).
-- `opts.cache` — a `RelevanceCache`, a `{ get, set }` object, or a filesystem path (Node writes `{ version: 1, entries }` atomically; a corrupt file is ignored). Omit it, or pass `true`, for a fresh in-memory cache used only by this call. `null` and `false` turn caching off. `createMemoryCache()` builds another memory cache you can share. The key is the model, SHA-256 of the task, SHA-256 of the original contents, and a variant tag (`full`, `binary-preview`, or `truncated:<maxTokens>:<maxBytes>`), separated by newlines. Thrown errors are not stored.
+- `opts.cache` — a `RelevanceCache`, a `{ get, set }` object, or a filesystem path (Node writes `{ version: 1, entries }` atomically; a corrupt file is ignored). Omit it, or pass `true`, for a fresh in-memory cache used only by this call. `null` and `false` turn caching off. `createMemoryCache()` builds another memory cache you can share. The key is the model, SHA-256 of the task, SHA-256 of the original contents, a variant tag (`full`, `binary-preview`, or `truncated:<maxTokens>:<maxBytes>`), the output-token limit, and the prompt version, separated by newlines. Fallback and error decisions are not stored.
 - `opts.maxBytes` — UTF-8 size cap (default 200000). `opts.maxTokens` — input-token cap (default 12000; estimated as characters / 4). `0` or `null` disables either limit.
 - `opts.onOversize` and `opts.onBinary` — `include` (keep, no model call), `exclude` (drop, no model call), or `truncate` (ask about a preview). Defaults are `truncate` and `exclude`. A `yes` on a truncated preview still forwards the original text in `result.files`.
+- `opts.ignore` — lockfiles and generated paths (`package-lock.json`, `dist/`, `*.min.js`, and the rest of `DEFAULT_IGNORE_PATTERNS`) are excluded with `skippedReason: "ignored"`. `false` classifies them. An array replaces the default patterns.
+- `opts.maxOutputTokens` — completion cap (default 1024). The call also sends `reasoning_effort: "low"` so a reasoning model does not spend the whole budget before the yes/no. An empty answer is an error.
+- `opts.retries` — extra attempts after a timeout or HTTP 5xx, including 503 (default 2), with exponential backoff.
 - `opts.onDecision` — called as each file finishes, in completion order. `result.decisions` stays in input order.
 - `opts.callLlm` — inject a mock client.
 
 Each decision is `{ path, decision, reason, raw, tokens, promptTokens, completionTokens, cached, skippedReason, error }`.
 
-- `decision` is `"yes"` or `"no"`. Ambiguous text (after `<think>` / `<thinking>` blocks are stripped) and a thrown call become `"yes"`, so a bad answer cannot drop a file. `error` is set only when the call throws.
-- `skippedReason` is `"binary"`, `"oversize"`, `"truncated"`, or `null`.
+- `decision` is `"yes"` or `"no"`. Ambiguous text (after `<think>` / `<thinking>` blocks are stripped), an empty answer, and a thrown call become `"yes"`, so a bad answer cannot drop a file. `error` is set when the call throws or the answer is empty. Those fallbacks are not cached. `result.failedOpen` counts them, and `formatFilterSummary` includes that count.
+- `skippedReason` is `"binary"`, `"oversize"`, `"truncated"`, `"ignored"`, or `null`.
 - `tokens`, `promptTokens`, and `completionTokens` are `0` when no model call was made. `reason` is a string.
 - `result.billedTokens` sums token counts for decisions that were not cache hits. Identical file bodies share one request; the later paths are `cached: true`.
 - `buildEnvironment(files, { decisions })` keeps only `"yes"` paths. Passing the decisions array itself does the same. With no second argument, every file is included. `buildEnvironment(result.files)` is the same set.
@@ -151,7 +154,7 @@ Applies a diff to an in-memory file map with per-file, LLM-assisted conflict res
 Deterministic, no-LLM patch application (the strict "basic" applier). `changed` is `true` iff something was created, modified, or deleted; `files` is the updated map (equal to the input on failure — no partial writes).
 
 ### Other exports
-`parseDiffPerFile`, `buildEnvironment`, `filterRelevant`, `RelevanceCache`, `createMemoryCache`, `parseRelevanceAnswer`, `isBinaryContent`, `countTokens`, `formatFilterSummary`, `dumpDecisions`, `colorCodeDiff`, `swallowReasoning`, `stripBadOutput`, `extractDiffBlocks`, `callLlm`, `resolveApiKey`, `resolveBaseUrl`, `getEnv`, `setEnv`, and the `oauth` namespace.
+`parseDiffPerFile`, `buildEnvironment`, `filterRelevant`, `RelevanceCache`, `createMemoryCache`, `parseRelevanceAnswer`, `isBinaryContent`, `isIgnoredPath`, `countTokens`, `formatFilterSummary`, `dumpDecisions`, `colorCodeDiff`, `swallowReasoning`, `stripBadOutput`, `extractDiffBlocks`, `callLlm`, `resolveApiKey`, `resolveBaseUrl`, `getEnv`, `setEnv`, and the `oauth` namespace.
 
 ## Differences from the Python package
 

@@ -12,6 +12,7 @@ export {
   createMemoryCache,
   parseRelevanceAnswer,
   isBinaryContent,
+  isIgnoredPath,
   countTokens,
   formatFilterSummary,
   dumpDecisions,
@@ -19,7 +20,10 @@ export {
   DEFAULT_FILTER_MAX_BYTES,
   DEFAULT_FILTER_MAX_TOKENS,
   DEFAULT_FILTER_MAX_OUTPUT_TOKENS,
+  DEFAULT_FILTER_REASONING_EFFORT,
   DEFAULT_FILTER_CONCURRENCY,
+  FILTER_PROMPT_VERSION,
+  DEFAULT_IGNORE_PATTERNS,
 } from './filter.js';
 
 /**
