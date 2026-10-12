@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -761,6 +762,32 @@ test('a stored fallback is not reused', async () => {
   assert.equal(n, 1);
   assert.equal(result.decisions[0].decision, 'no');
   assert.equal(result.decisions[0].cached, false);
+});
+
+test('cache keys hash when global crypto is missing (Node 18)', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+  Object.defineProperty(globalThis, 'crypto', {
+    configurable: true,
+    writable: true,
+    value: undefined,
+  });
+  try {
+    const body = 'v = 1\n';
+    const key = await RelevanceCache.makeKey('m', 'task', body);
+    const parts = key.split('\n');
+    assert.equal(parts[0], 'm');
+    assert.equal(parts[1], createHash('sha256').update('task').digest('hex'));
+    assert.equal(parts[2], createHash('sha256').update(body).digest('hex'));
+    const mock = llm(() => response('yes'));
+    const result = await filterRelevant({ 'a.py': body }, 'task', {
+      model: 'm', cache: false, apiKey: 'k', callLlm: mock.fn,
+    });
+    assert.equal(result.decisions[0].decision, 'yes');
+    assert.equal(result.decisions[0].error, null);
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis, 'crypto', descriptor);
+    else delete globalThis.crypto;
+  }
 });
 
 test('the output-token limit is part of the cache key', async () => {

@@ -278,12 +278,31 @@ export function createMemoryCache() {
 }
 
 /**
+ * Browsers and Node 19+ expose Web Crypto as `globalThis.crypto`. Node 18
+ * keeps the same API on `node:crypto` as `webcrypto`. That module is imported
+ * only when the global is missing, so this file still loads in the browser.
+ * @returns {Promise<Crypto>}
+ */
+async function getWebCrypto() {
+  const exposed = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined;
+  if (exposed && exposed.subtle) return exposed;
+  try {
+    const mod = await import('node:crypto');
+    if (mod.webcrypto && mod.webcrypto.subtle) return mod.webcrypto;
+  } catch {
+    // A browser without `globalThis.crypto`, or a host that cannot load node:crypto.
+  }
+  throw new Error('Web Crypto (crypto.subtle) is required to hash relevance cache keys.');
+}
+
+/**
  * @param {string} text
  * @returns {Promise<string>} hex SHA-256
  */
 async function sha256(text) {
   const data = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest('SHA-256', data);
+  const webcrypto = await getWebCrypto();
+  const digest = await webcrypto.subtle.digest('SHA-256', data);
   let hex = '';
   for (const byte of new Uint8Array(digest)) hex += byte.toString(16).padStart(2, '0');
   return hex;
