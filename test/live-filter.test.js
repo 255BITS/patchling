@@ -31,15 +31,17 @@ test(
       'math_utils.py': 'def add(a, b):\n    return a + b\n',
     };
     const task = 'Change the greeting from hello to goodbye. Do not edit unrelated helpers.';
-    const decisions = await filterRelevant(files, task, { model: MODEL, apiKey });
-    const by = Object.fromEntries(decisions.map((d) => [d.path, d]));
+    const result = await filterRelevant(files, task, { model: MODEL, apiKey });
+    const by = Object.fromEntries(result.decisions.map((d) => [d.path, d]));
 
     assert.equal(by['greet.py'].decision, 'yes', JSON.stringify(by['greet.py']));
     assert.equal(by['math_utils.py'].decision, 'no', JSON.stringify(by['math_utils.py']));
     assert.equal(by['greet.py'].skippedReason, null);
     assert.ok(by['greet.py'].raw);
+    assert.equal(result.files['greet.py'], files['greet.py']);
+    assert.equal('math_utils.py' in result.files, false);
 
-    const env = buildEnvironment(files, { decisions });
+    const env = buildEnvironment(files, { decisions: result.decisions });
     assert.match(env, /File: greet\.py/);
     assert.doesNotMatch(env, /math_utils/);
   },

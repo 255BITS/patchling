@@ -1,106 +1,273 @@
 /**
- * Process-wide in-memory cache used when `filterRelevant` is called without
- * a `cache` option. Pass the result as `cache` to share or inspect it.
+ * Fresh in-memory cache. Pass one instance as `cache` to share it across calls.
  * @returns {RelevanceCache}
  */
 export function createMemoryCache(): RelevanceCache;
 /**
- * Parse a yes/no classification. Think tags and "> Reasoning" preambles are
- * removed first. The first word wins when it is yes or no. If both words
- * appear, or neither does, the answer is ambiguous and the caller includes
- * the file.
+ * Parse a yes/no relevance answer.
+ *
+ * Think tags and chain-of-thought reasoning blocks are removed before the
+ * answer is read, so a "no" inside a think tag cannot override a final "yes".
+ * A single consistent yes or no wins, including "Answer: yes" and a fenced
+ * "NO". Both words, or neither, is ambiguous — callers include the file.
  *
  * @param {unknown} raw
- * @returns {{ decision: 'yes' | 'no', reason: string | null, ambiguous: boolean }}
+ * @returns {{ decision: 'yes' | 'no' | null, cleaned: string }}
  */
 export function parseRelevanceAnswer(raw: unknown): {
-    decision: "yes" | "no";
-    reason: string | null;
-    ambiguous: boolean;
+    decision: "yes" | "no" | null;
+    cleaned: string;
 };
+/**
+ * Character-length stand-in for a tokenizer (Python's fallback when tiktoken
+ * is absent). Empty text is 0; anything else is at least 1.
+ * @param {string} text
+ * @returns {number}
+ */
+export function countTokens(text: string): number;
+/**
+ * True when `content` looks like a binary file (NUL or a dense run of
+ * non-text controls). Non-text values other than byte arrays are not binary;
+ * {@link filterRelevant} rejects them when it coerces the file.
+ * @param {unknown} content
+ * @returns {boolean}
+ */
+export function isBinaryContent(content: unknown): boolean;
 /**
  * Ask a cheap model which files are relevant to `task`.
  *
- * Files are classified with at most `concurrency` calls in flight. Binary
- * files and files over `maxBytes` are not sent. The cache key is
- * `(model, sha256(task), sha256(content))`. Omitting `cache` uses an
- * in-memory cache shared by later calls; `cache: null` disables it.
+ * `files` is a `{ path: content }` map (string or byte array). The returned
+ * `files` map contains only the `yes` files, in input order, with their
+ * original contents — a truncated preview is what the model saw, not what is
+ * forwarded. `decisions` has one entry per input file.
  *
- * @param {Record<string, string>} files
+ * `cache` is a {@link RelevanceCache}, a filesystem path (memory plus that
+ * JSON file), `true` or omitted (a fresh in-memory cache for this call), or
+ * `null` / `false` (disabled). The cache key is the model, a hash of the task,
+ * a hash of the original file contents, and a truncation variant.
+ *
+ * Binary files and files over `maxBytes` / `maxTokens` are not sent in full.
+ * `onBinary` and `onOversize` are `include` (keep, no model call), `exclude`
+ * (drop, no model call), or `truncate` (ask about a truncated or redacted
+ * preview). Pass `0` or `null` for `maxBytes` or `maxTokens` to disable that
+ * limit. Credentials resolve the same way as the rest of the library.
+ *
+ * @param {Record<string, string | Uint8Array>} files
  * @param {string} task
  * @param {object} [opts]
- * @param {string} [opts.model] cheap classifier; `GPTDIFF_FILTER_MODEL`, else {@link DEFAULT_FILTER_MODEL}
- * @param {number} [opts.concurrency] max in-flight calls (default 8)
- * @param {RelevanceCache | null} [opts.cache] pluggable cache; null disables; default is in-memory
- * @param {number | null} [opts.maxBytes] UTF-8 size cap; null disables; default {@link DEFAULT_FILTER_MAX_BYTES}
+ * @param {string} [opts.model] `GPTDIFF_FILTER_MODEL`, else {@link DEFAULT_FILTER_MODEL}
+ * @param {number} [opts.concurrency] max in-flight calls (default {@link DEFAULT_FILTER_CONCURRENCY})
+ * @param {RelevanceCache | string | boolean | null | { get: Function, put?: Function, set?: Function }} [opts.cache]
+ * @param {number | null} [opts.maxBytes] UTF-8 cap; `0` or `null` disables; default {@link DEFAULT_FILTER_MAX_BYTES}
+ * @param {number | null} [opts.maxTokens] input-token cap; `0` or `null` disables; default {@link DEFAULT_FILTER_MAX_TOKENS}
+ * @param {'include' | 'exclude' | 'truncate'} [opts.onOversize] default `truncate`
+ * @param {'include' | 'exclude' | 'truncate'} [opts.onBinary] default `exclude`
+ * @param {number} [opts.maxOutputTokens] completion cap (default {@link DEFAULT_FILTER_MAX_OUTPUT_TOKENS})
  * @param {(decision: RelevanceDecision) => void} [opts.onDecision] called as each file finishes (completion order)
- * @param {string} [opts.apiKey] same resolution as the rest of the package (`GPTDIFF_LLM_API_KEY`)
- * @param {string} [opts.baseUrl] same resolution as the rest of the package (`GPTDIFF_LLM_BASE_URL`)
+ * @param {string} [opts.apiKey] `GPTDIFF_LLM_API_KEY` when omitted
+ * @param {string} [opts.baseUrl] `GPTDIFF_LLM_BASE_URL` when omitted
  * @param {Function} [opts.callLlm] injectable client (tests)
- * @param {number} [opts.maxTokens]
- * @param {number} [opts.temperature]
- * @returns {Promise<RelevanceDecision[]>} one decision per file, in input order
+ * @returns {Promise<FilterRelevantResult>}
  */
-export function filterRelevant(files: Record<string, string>, task: string, opts?: {
+export function filterRelevant(files: Record<string, string | Uint8Array>, task: string, opts?: {
     model?: string;
     concurrency?: number;
-    cache?: RelevanceCache | null;
+    cache?: RelevanceCache | string | boolean | null | {
+        get: Function;
+        put?: Function;
+        set?: Function;
+    };
     maxBytes?: number | null;
+    maxTokens?: number | null;
+    onOversize?: "include" | "exclude" | "truncate";
+    onBinary?: "include" | "exclude" | "truncate";
+    maxOutputTokens?: number;
     onDecision?: (decision: RelevanceDecision) => void;
     apiKey?: string;
     baseUrl?: string;
     callLlm?: Function;
-    maxTokens?: number;
-    temperature?: number;
-}): Promise<RelevanceDecision[]>;
+}): Promise<FilterRelevantResult>;
+/**
+ * One-screen summary of a filter pass. Per-file lines when `verbose`.
+ * @param {FilterRelevantResult} result
+ * @param {boolean} [verbose]
+ * @returns {string}
+ */
+export function formatFilterSummary(result: FilterRelevantResult, verbose?: boolean): string;
+/**
+ * Write the filter result as JSON so callers can inspect every decision.
+ * Decision fields stay camelCase. `files` is the list of kept paths.
+ * @param {FilterRelevantResult} result
+ * @param {string} path
+ * @returns {Promise<void>}
+ */
+export function dumpDecisions(result: FilterRelevantResult, path: string): Promise<void>;
 /** Cheap default for yes/no classification. Override with GPTDIFF_FILTER_MODEL. */
-export const DEFAULT_FILTER_MODEL: "xiaomi/mimo-v2.5-pro-ultraspeed";
-/** Files larger than this (UTF-8 bytes) are skipped unless `maxBytes` is set. */
-export const DEFAULT_FILTER_MAX_BYTES: 262144;
+export const DEFAULT_FILTER_MODEL: "gemini-2.0-flash";
 /** In-flight classifications per call when `concurrency` is omitted. */
 export const DEFAULT_FILTER_CONCURRENCY: 8;
+/** UTF-8 size cap. `0` or `null` disables it. */
+export const DEFAULT_FILTER_MAX_BYTES: 200000;
+/** Input-token cap (characters / 4 when no tokenizer is bundled). `0` or `null` disables it. */
+export const DEFAULT_FILTER_MAX_TOKENS: 12000;
+/** Completion cap for the yes/no call. */
+export const DEFAULT_FILTER_MAX_OUTPUT_TOKENS: 256;
+/**
+ * @typedef {object} RelevanceDecision
+ * @property {string} path
+ * @property {'yes' | 'no'} decision `yes` files go on to generateDiff.
+ *   Ambiguous answers and errors are `yes`.
+ * @property {string} reason short explanation; the cleaned model text when a call was made
+ * @property {string | null} raw model text before parsing, or null when no call was made
+ * @property {number} tokens total tokens for the call; 0 when no call was made
+ * @property {number} promptTokens
+ * @property {number} completionTokens
+ * @property {boolean} cached true when this judgment was reused (a cache hit, or a later path in a shared request)
+ * @property {'binary' | 'oversize' | 'truncated' | null} skippedReason
+ *   set when the file was not sent in full
+ * @property {string | null} error set when the call threw; the file is still included
+ */
+/**
+ * @typedef {object} FilterRelevantResult
+ * @property {Record<string, string>} files `yes` files in input order, original contents
+ * @property {RelevanceDecision[]} decisions one per input file, in input order
+ * @property {string} model
+ * @property {RelevanceDecision[]} errors decisions whose call threw
+ * @property {number} billedTokens sum of `tokens` on decisions that were not cache hits
+ * @property {number} billedPromptTokens
+ * @property {number} billedCompletionTokens
+ */
+/**
+ * Record stored in a cache. Snake_case so a JSON file matches the Python cache.
+ * @typedef {object} RelevanceCacheRecord
+ * @property {'yes' | 'no'} decision
+ * @property {string} [reason]
+ * @property {string | null} [raw]
+ * @property {number} [tokens]
+ * @property {number} [prompt_tokens]
+ * @property {number} [completion_tokens]
+ * @property {'binary' | 'oversize' | 'truncated' | null} [skipped_reason]
+ * @property {string | null} [error]
+ * @property {string} [cache_key]
+ */
+/**
+ * In-memory relevance cache with an optional on-disk JSON file.
+ *
+ * Keys are `model`, SHA-256 of the task, SHA-256 of the original contents, and
+ * a variant tag (`full`, `binary-preview`, or `truncated:<maxTokens>:<maxBytes>`),
+ * separated by newlines. A judgment on a truncated body is not reused as a
+ * full-content judgment.
+ */
+export class RelevanceCache {
+    /**
+     * @param {string} model
+     * @param {string} task
+     * @param {string} content original file text
+     * @param {string} [variant]
+     * @returns {Promise<string>}
+     */
+    static makeKey(model: string, task: string, content: string, variant?: string): Promise<string>;
+    /**
+     * @param {string} [path] JSON file. Omit for memory only.
+     *   Loaded on the first read. Corrupt files are ignored.
+     */
+    constructor(path?: string);
+    path: string;
+    /** @type {Record<string, RelevanceCacheRecord>} */
+    _entries: Record<string, RelevanceCacheRecord>;
+    /** @type {Promise<void> | null} */
+    _loadPromise: Promise<void> | null;
+    /**
+     * @param {string} key
+     * @returns {Promise<RelevanceCacheRecord | undefined>}
+     */
+    get(key: string): Promise<RelevanceCacheRecord | undefined>;
+    /**
+     * @param {string} key
+     * @param {RelevanceCacheRecord} record
+     * @returns {Promise<void>}
+     */
+    put(key: string, record: RelevanceCacheRecord): Promise<void>;
+    /**
+     * Alias of {@link put} so a `{ get, set }` cache and a `RelevanceCache` share a shape.
+     * @param {string} key
+     * @param {RelevanceCacheRecord} record
+     * @returns {Promise<void>}
+     */
+    set(key: string, record: RelevanceCacheRecord): Promise<void>;
+    /** Write `{ version: 1, entries }` atomically. No-op without a path. */
+    flush(): Promise<void>;
+    /** @returns {Promise<void>} */
+    load(): Promise<void>;
+    /** @returns {Promise<void>} */
+    _load(): Promise<void>;
+}
 export type RelevanceDecision = {
     path: string;
     /**
      * `yes` files go on to generateDiff.
-     * Ambiguous answers and errors are `yes` so a bad classifier cannot drop a
-     * file. `skip` files were not sent to the model.
+     * Ambiguous answers and errors are `yes`.
      */
-    decision: "yes" | "no" | "skip";
+    decision: "yes" | "no";
     /**
-     * model text, unchanged (think tags included)
+     * short explanation; the cleaned model text when a call was made
+     */
+    reason: string;
+    /**
+     * model text before parsing, or null when no call was made
      */
     raw: string | null;
     /**
-     * total tokens for the call; null when skipped or the call failed
+     * total tokens for the call; 0 when no call was made
      */
-    tokens: number | null;
+    tokens: number;
+    promptTokens: number;
+    completionTokens: number;
     /**
-     * true when this answer was read from the cache
+     * true when this judgment was reused (a cache hit, or a later path in a shared request)
      */
     cached: boolean;
-    skippedReason: "binary" | "too-large" | null;
     /**
-     * set for thrown calls and ambiguous answers
+     *   set when the file was not sent in full
+     */
+    skippedReason: "binary" | "oversize" | "truncated" | null;
+    /**
+     * set when the call threw; the file is still included
      */
     error: string | null;
-    /**
-     * short reason after the yes/no, when the model gave one
-     */
-    reason: string | null;
 };
-export type RelevanceCacheEntry = {
-    decision: "yes" | "no";
-    raw: string | null;
-    tokens: number | null;
-    reason: string | null;
+export type FilterRelevantResult = {
+    /**
+     * `yes` files in input order, original contents
+     */
+    files: Record<string, string>;
+    /**
+     * one per input file, in input order
+     */
+    decisions: RelevanceDecision[];
+    model: string;
+    /**
+     * decisions whose call threw
+     */
+    errors: RelevanceDecision[];
+    /**
+     * sum of `tokens` on decisions that were not cache hits
+     */
+    billedTokens: number;
+    billedPromptTokens: number;
+    billedCompletionTokens: number;
 };
 /**
- * A cache is any object with `get(key)` and `set(key, value)`. Either method
- * may be sync or async. Keys are `${model}\\0${taskHash}\\0${contentHash}`
- * (SHA-256 hex). Pass `cache: null` to disable caching.
+ * Record stored in a cache. Snake_case so a JSON file matches the Python cache.
  */
-export type RelevanceCache = {
-    get: (key: string) => RelevanceCacheEntry | undefined | Promise<RelevanceCacheEntry | undefined>;
-    set: (key: string, value: RelevanceCacheEntry) => void | Promise<void>;
+export type RelevanceCacheRecord = {
+    decision: "yes" | "no";
+    reason?: string;
+    raw?: string | null;
+    tokens?: number;
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    skipped_reason?: "binary" | "oversize" | "truncated" | null;
+    error?: string | null;
+    cache_key?: string;
 };

@@ -1,14 +1,32 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   filterRelevant,
+  RelevanceCache,
   createMemoryCache,
   parseRelevanceAnswer,
+  isBinaryContent,
+  countTokens,
+  formatFilterSummary,
+  dumpDecisions,
   buildEnvironment,
   DEFAULT_FILTER_MODEL,
   DEFAULT_FILTER_MAX_BYTES,
+  DEFAULT_FILTER_MAX_TOKENS,
+  DEFAULT_FILTER_MAX_OUTPUT_TOKENS,
+  DEFAULT_FILTER_CONCURRENCY,
 } from '../src/index.js';
 import { setEnv } from '../src/env.js';
+
+function response(content, prompt = 11, completion = 3, total = prompt + completion) {
+  return {
+    choices: [{ message: { content } }],
+    usage: { prompt_tokens: prompt, completion_tokens: completion, total_tokens: total },
+  };
+}
 
 function llm(replies) {
   const calls = [];
@@ -19,303 +37,593 @@ function llm(replies) {
     maxInFlight = Math.max(maxInFlight, inFlight);
     const index = calls.length;
     calls.push(req);
-    await new Promise((r) => setTimeout(r, 15));
+    const next = typeof replies === 'function' ? await replies(req, index) : replies[index];
     inFlight -= 1;
-    const next = typeof replies === 'function' ? replies(req, index) : replies[index];
     if (next instanceof Error) throw next;
-    const content = typeof next === 'string' || next == null ? (next ?? 'yes') : next.content;
-    const tokens = typeof next === 'object' && next && 'tokens' in next ? next.tokens : 11;
-    return {
-      choices: [{ message: { content } }],
-      usage: { prompt_tokens: 7, completion_tokens: Math.max(0, tokens - 7), total_tokens: tokens },
-    };
+    if (next && typeof next === 'object' && next.choices) return next;
+    return response(next == null ? 'yes' : String(next));
   };
   return { fn, calls, stats: () => ({ maxInFlight, count: calls.length }) };
 }
 
-function replyByPath(map) {
-  return (req) => {
-    const path = req.messages[1].content.match(/File: ([^\n]+)/)[1];
-    if (!Object.prototype.hasOwnProperty.call(map, path)) throw new Error(`no reply for ${path}`);
-    return map[path];
-  };
+function pathsOf(req) {
+  const user = req.messages[req.messages.length - 1].content;
+  const match = user.match(/File paths?:\n([\s\S]*?)\n\n/);
+  assert.ok(match, user);
+  return match[1].split('\n');
 }
 
-const QUESTION = 'is this file relevant to the task? yes/no';
+function bodyOf(req) {
+  const user = req.messages[req.messages.length - 1].content;
+  const marker = 'File contents:\n';
+  const start = user.indexOf(marker);
+  assert.notEqual(start, -1);
+  return user.slice(start + marker.length).replace(/\n\nIs this file relevant to the task\? yes\/no$/, '');
+}
 
-test('parseRelevanceAnswer strips think tags and accepts yes/no with a reason', () => {
-  assert.deepEqual(parseRelevanceAnswer('yes'), { decision: 'yes', reason: null, ambiguous: false });
-  assert.deepEqual(parseRelevanceAnswer('  YES. '), { decision: 'yes', reason: null, ambiguous: false });
-  assert.deepEqual(parseRelevanceAnswer('No'), { decision: 'no', reason: null, ambiguous: false });
-  assert.deepEqual(parseRelevanceAnswer('no — arithmetic helpers'), {
-    decision: 'no',
-    reason: 'arithmetic helpers',
-    ambiguous: false,
-  });
-  assert.deepEqual(parseRelevanceAnswer('<think>the greeting lives here</think>\n\nno'), {
-    decision: 'no',
-    reason: null,
-    ambiguous: false,
-  });
-  assert.deepEqual(parseRelevanceAnswer('**yes**\ndefines greet'), {
-    decision: 'yes',
-    reason: 'defines greet',
-    ambiguous: false,
-  });
-  assert.equal(parseRelevanceAnswer('The answer is no.').decision, 'no');
-  const both = parseRelevanceAnswer('Yes and no');
-  assert.equal(both.decision, 'yes');
-  assert.equal(both.ambiguous, true);
-  const maybe = parseRelevanceAnswer('maybe later');
-  assert.equal(maybe.decision, 'yes');
-  assert.equal(maybe.ambiguous, true);
-  const empty = parseRelevanceAnswer('<think>only thoughts</think>');
-  assert.equal(empty.decision, 'yes');
-  assert.equal(empty.ambiguous, true);
+function answerFor(req, unmatched = 'no — unrelated') {
+  const body = bodyOf(req);
+  if (body.includes('def keep') || body.includes('ALPHA_TOKEN')) return response('yes — needed for the task');
+  if (body.includes('BINARY_PREVIEW')) return response('yes the path matches');
+  return response(unmatched);
+}
+
+const baseOpts = { model: 'fake-model', apiKey: 'test-key', cache: false };
+
+let envLock = Promise.resolve();
+function withEnv(fn) {
+  const run = envLock.then(fn, fn);
+  envLock = run.then(() => {}, () => {});
+  return run;
+}
+
+test('parseRelevanceAnswer accepts yes/no variants and drops a fence', () => {
+  assert.equal(parseRelevanceAnswer('yes').decision, 'yes');
+  assert.equal(parseRelevanceAnswer('Yes.').decision, 'yes');
+  assert.equal(parseRelevanceAnswer('NO\nthis file is a changelog').decision, 'no');
+  assert.equal(parseRelevanceAnswer('Answer: yes, the parser lives here').decision, 'yes');
+  const fenced = parseRelevanceAnswer('```\nyes\n```');
+  assert.equal(fenced.decision, 'yes');
+  assert.ok(fenced.cleaned.includes('yes'));
 });
 
-test('filterRelevant sends full contents and the task, and returns per-file decisions', async () => {
-  const mock = llm(replyByPath({
-    'greet.py': 'yes — defines the greeting',
-    'math_utils.py': 'no',
-  }));
+test('parseRelevanceAnswer strips think tags before deciding', () => {
+  const yes = parseRelevanceAnswer('<think>no, this file is irrelevant</think>\nyes, the function to rename is here');
+  assert.equal(yes.decision, 'yes');
+  assert.equal(yes.cleaned.includes('irrelevant'), false);
+
+  assert.equal(parseRelevanceAnswer('<think>yes, definitely edit it</think>\nno — tests only').decision, 'no');
+  assert.equal(parseRelevanceAnswer('<think>no, skip this file entirely').decision, null);
+  assert.equal(parseRelevanceAnswer('<thinking>maybe</thinking>\nyes').decision, 'yes');
+});
+
+test('parseRelevanceAnswer is ambiguous when both words appear, or neither', () => {
+  assert.equal(parseRelevanceAnswer("I'm not sure about this one").decision, null);
+  assert.equal(parseRelevanceAnswer('yes for the helper, no for the tests').decision, null);
+  assert.equal(parseRelevanceAnswer('').decision, null);
+  assert.equal(parseRelevanceAnswer('nope').decision, null);
+  assert.equal(parseRelevanceAnswer('The answer is no.').decision, 'no');
+});
+
+test('filterRelevant keeps only yes files and reports camelCase decisions', async () => {
+  const mock = llm((req) => answerFor(req));
   const files = {
-    'greet.py': 'def greet():\n    print("hello")\n',
-    'math_utils.py': 'def add(a, b):\n    return a + b\n',
+    'keep.py': 'def keep():\n    return 1\n',
+    'drop.py': 'def drop():\n    return 2\n',
   };
   const seen = [];
-  const decisions = await filterRelevant(files, 'Say goodbye instead of hello', {
-    model: 'cheap-test',
-    apiKey: 'sk-test',
+  const result = await filterRelevant(files, 'Update keep()', {
+    ...baseOpts,
     baseUrl: 'https://example.test/v1',
-    cache: createMemoryCache(),
     callLlm: mock.fn,
     onDecision: (d) => seen.push(d.path),
   });
 
-  assert.equal(decisions.length, 2);
-  assert.equal(decisions[0].path, 'greet.py');
-  assert.equal(decisions[0].decision, 'yes');
-  assert.equal(decisions[0].reason, 'defines the greeting');
-  assert.equal(decisions[0].raw, 'yes — defines the greeting');
-  assert.equal(decisions[0].tokens, 11);
-  assert.equal(decisions[0].cached, false);
-  assert.equal(decisions[0].skippedReason, null);
-  assert.equal(decisions[0].error, null);
-  assert.equal(decisions[1].decision, 'no');
-  assert.deepEqual(seen.sort(), ['greet.py', 'math_utils.py']);
+  assert.deepEqual(Object.keys(result.files), ['keep.py']);
+  assert.equal(result.files['keep.py'], files['keep.py']);
+  assert.deepEqual(result.decisions.map((d) => d.path), ['keep.py', 'drop.py']);
+  assert.deepEqual(result.decisions.map((d) => d.decision), ['yes', 'no']);
+  assert.equal(result.model, 'fake-model');
+  const yes = result.decisions[0];
+  assert.ok(yes.raw.startsWith('yes'));
+  assert.ok(yes.reason.includes('needed'));
+  assert.equal(yes.tokens, 14);
+  assert.equal(yes.promptTokens, 11);
+  assert.equal(yes.completionTokens, 3);
+  assert.equal(yes.cached, false);
+  assert.equal(yes.skippedReason, null);
+  assert.equal(yes.error, null);
+  assert.equal('cacheKey' in yes, false);
+  assert.deepEqual(seen.sort(), ['drop.py', 'keep.py']);
 
   assert.equal(mock.calls.length, 2);
-  for (const [path, content] of Object.entries(files)) {
-    const call = mock.calls.find((c) => c.messages[1].content.includes(`File: ${path}\n`));
-    assert.ok(call, path);
-    assert.equal(call.model, 'cheap-test');
-    assert.equal(call.apiKey, 'sk-test');
+  for (const call of mock.calls) {
+    assert.equal(call.model, 'fake-model');
+    assert.equal(call.apiKey, 'test-key');
     assert.equal(call.baseUrl, 'https://example.test/v1');
     assert.equal(call.temperature, 0);
-    assert.match(call.messages[1].content, /Task:\nSay goodbye instead of hello/);
-    assert.ok(call.messages[1].content.includes(content));
-    assert.ok(call.messages[1].content.includes(QUESTION));
+    assert.equal(call.maxTokens, DEFAULT_FILTER_MAX_OUTPUT_TOKENS);
+    assert.match(call.messages[1].content, /Task:\nUpdate keep\(\)/);
+    assert.match(call.messages[1].content, /Is this file relevant to the task\? yes\/no/);
   }
+  assert.ok(bodyOf(mock.calls[0]).includes('def keep') || bodyOf(mock.calls[1]).includes('def keep'));
 });
 
-test('ambiguous answers and thrown errors include the file and surface the error', async () => {
-  const mock = llm(replyByPath({
-    a: 'maybe',
-    b: new Error('connection reset'),
-    c: 'no',
-  }));
-  const decisions = await filterRelevant(
-    { a: 'aaa', b: 'bbb', c: 'ccc' },
-    'touch a',
-    { model: 'cheap-test', cache: null, callLlm: mock.fn },
+test('ambiguous answers and thrown errors include the file', async () => {
+  const mock = llm((req) => {
+    const paths = pathsOf(req);
+    if (paths.includes('ambiguous.py')) return response('<think>no</think>\nmaybe later');
+    throw new Error('connection reset');
+  });
+  const result = await filterRelevant(
+    { 'ambiguous.py': 'x = 1\n', 'broken.py': 'y = 2\n' },
+    'Touch both',
+    { ...baseOpts, callLlm: mock.fn },
   );
-  assert.equal(decisions[0].decision, 'yes');
-  assert.equal(decisions[0].error, 'ambiguous answer');
-  assert.equal(decisions[0].raw, 'maybe');
-  assert.equal(decisions[1].decision, 'yes');
-  assert.equal(decisions[1].error, 'connection reset');
-  assert.equal(decisions[1].raw, null);
-  assert.equal(decisions[1].tokens, null);
-  assert.equal(decisions[2].decision, 'no');
-  assert.equal(decisions[2].error, null);
+  assert.deepEqual(Object.keys(result.files).sort(), ['ambiguous.py', 'broken.py']);
+  const by = Object.fromEntries(result.decisions.map((d) => [d.path, d]));
+  assert.equal(by['ambiguous.py'].decision, 'yes');
+  assert.equal(by['ambiguous.py'].error, null);
+  assert.match(by['ambiguous.py'].reason, /ambiguous/);
+  assert.equal(by['broken.py'].decision, 'yes');
+  assert.match(by['broken.py'].error, /connection reset/);
+  assert.match(by['broken.py'].reason, /connection reset/);
+  assert.equal(by['broken.py'].tokens, 0);
+  assert.deepEqual(result.errors, [by['broken.py']]);
+  const summary = formatFilterSummary(result);
+  assert.match(summary, /connection reset/);
+  assert.match(summary, /included by default/);
 });
 
-test('binary and huge files are skipped and never sent', async () => {
-  const mock = llm(['yes']);
-  const huge = 'x'.repeat(50);
-  const files = {
-    'keep.py': 'print(1)\n',
-    'logo.bin': 'PNG\0bytes',
-    'notes.txt': huge,
-    'odd.dat': '\u0001'.repeat(20),
-  };
-  const decisions = await filterRelevant(files, 'print', {
-    model: 'cheap-test',
-    cache: null,
-    maxBytes: 40,
-    callLlm: mock.fn,
+test('errors are not cached', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    if (n === 1) throw new Error('temporary');
+    return response('no');
   });
-  const by = Object.fromEntries(decisions.map((d) => [d.path, d]));
-  assert.equal(by['keep.py'].decision, 'yes');
-  assert.equal(by['logo.bin'].decision, 'skip');
-  assert.equal(by['logo.bin'].skippedReason, 'binary');
-  assert.equal(by['logo.bin'].tokens, null);
-  assert.equal(by['notes.txt'].decision, 'skip');
-  assert.equal(by['notes.txt'].skippedReason, 'too-large');
-  assert.equal(by['odd.dat'].skippedReason, 'binary');
-  assert.equal(mock.stats().count, 1);
-  assert.ok(!mock.calls[0].messages[1].content.includes('PNG'));
+  const cache = new RelevanceCache();
+  const files = { 'a.py': "print('a')\n" };
+  const opts = { model: 'fake', cache, apiKey: 'test-key', callLlm: mock.fn };
+  const first = await filterRelevant(files, 'edit a', opts);
+  const second = await filterRelevant(files, 'edit a', opts);
+  assert.equal(first.decisions[0].decision, 'yes');
+  assert.ok(first.decisions[0].error);
+  assert.equal(second.decisions[0].decision, 'no');
+  assert.equal(second.decisions[0].error, null);
+  assert.equal(n, 2);
 });
 
-test('maxBytes counts UTF-8 bytes and can be raised or disabled', async () => {
-  const mock = llm(['yes', 'yes', 'no']);
-  const accented = 'é'; // 1 UTF-16 unit, 2 UTF-8 bytes
-  const files = { a: accented, b: 'b' };
-  const skipped = await filterRelevant(files, 't', {
-    model: 'cheap-test',
-    cache: null,
-    maxBytes: 1,
-    callLlm: mock.fn,
+test('memory and disk cache round-trip', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    return response('yes', 5, 1, 6);
   });
-  assert.equal(skipped[0].skippedReason, 'too-large');
-  assert.equal(skipped[1].decision, 'yes');
+  const dir = mkdtempSync(join(tmpdir(), 'patchling-filter-'));
+  const disk = join(dir, 'relevance-cache.json');
+  const files = { 'a.py': "print('cached')\n" };
+  const firstCache = new RelevanceCache(disk);
+  const first = await filterRelevant(files, 'ship it', {
+    model: 'fake', cache: firstCache, apiKey: 'test-key', callLlm: mock.fn,
+  });
+  assert.equal(first.decisions[0].cached, false);
+  assert.equal(n, 1);
+  const stored = JSON.parse(readFileSync(disk, 'utf8'));
+  assert.equal(stored.version, 1);
+  assert.equal(Object.keys(stored.entries).length, 1);
+  const [storedKey, storedValue] = Object.entries(stored.entries)[0];
+  assert.equal(storedKey.split('\n').length, 4);
+  assert.equal(storedKey.split('\n')[3], 'full');
+  assert.equal(storedValue.decision, 'yes');
+  assert.equal(storedValue.prompt_tokens, 5);
+  assert.equal(storedValue.skipped_reason, null);
 
-  const sent = await filterRelevant({ a: accented }, 't', {
-    model: 'cheap-test',
-    cache: null,
-    maxBytes: 2,
-    callLlm: mock.fn,
+  const second = await filterRelevant(files, 'ship it', {
+    model: 'fake', cache: new RelevanceCache(disk), apiKey: 'test-key', callLlm: mock.fn,
   });
-  assert.equal(sent[0].decision, 'yes');
-  assert.equal(sent[0].skippedReason, null);
+  assert.equal(n, 1);
+  assert.equal(second.decisions[0].cached, true);
+  assert.equal(second.decisions[0].tokens, 6);
+  assert.equal(second.decisions[0].promptTokens, 5);
+  assert.equal(second.billedTokens, 0);
+  assert.ok(second.files['a.py']);
 
-  const open = await filterRelevant({ a: 'zzzz'.repeat(100) }, 't', {
-    model: 'cheap-test',
-    cache: null,
-    maxBytes: null,
-    callLlm: mock.fn,
-  });
-  assert.equal(open[0].decision, 'no');
+  await filterRelevant(files, 'other task', { model: 'fake', cache: firstCache, apiKey: 'k', callLlm: mock.fn });
+  await filterRelevant(files, 'ship it', { model: 'other-model', cache: firstCache, apiKey: 'k', callLlm: mock.fn });
+  await filterRelevant(
+    { 'a.py': "print('changed')\n" },
+    'ship it',
+    { model: 'fake', cache: firstCache, apiKey: 'k', callLlm: mock.fn },
+  );
+  assert.equal(n, 4);
 });
 
-test('a file of exactly maxBytes is sent', async () => {
-  const mock = llm(['yes']);
-  const content = 'abcd';
-  const decisions = await filterRelevant({ a: content }, 't', {
-    model: 'cheap-test',
-    cache: null,
-    maxBytes: 4,
-    callLlm: mock.fn,
+test('a cache path string enables disk cache and false disables it', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    return response('no');
   });
-  assert.equal(decisions[0].decision, 'yes');
-  assert.equal(mock.stats().count, 1);
+  const dir = mkdtempSync(join(tmpdir(), 'patchling-filter-'));
+  const disk = join(dir, 'nested', 'cache.json');
+  const files = { 'a.py': 'v = 1\n' };
+  await filterRelevant(files, 'task', { model: 'm', cache: disk, apiKey: 'k', callLlm: mock.fn });
+  await filterRelevant(files, 'task', { model: 'm', cache: disk, apiKey: 'k', callLlm: mock.fn });
+  assert.equal(n, 1);
+
+  await filterRelevant(files, 'task', { model: 'm', cache: false, apiKey: 'k', callLlm: mock.fn });
+  await filterRelevant(files, 'task', { model: 'm', cache: null, apiKey: 'k', callLlm: mock.fn });
+  assert.equal(n, 3);
+});
+
+test('a corrupt disk cache is ignored', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'patchling-filter-'));
+  const disk = join(dir, 'cache.json');
+  writeFileSync(disk, '{not json');
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    return response('yes');
+  });
+  const result = await filterRelevant(
+    { 'a.py': 'v = 1\n' },
+    'task',
+    { model: 'm', cache: new RelevanceCache(disk), apiKey: 'k', callLlm: mock.fn },
+  );
+  assert.equal(n, 1);
+  assert.equal(result.decisions[0].decision, 'yes');
+  const rewritten = JSON.parse(readFileSync(disk, 'utf8'));
+  assert.equal(rewritten.version, 1);
+});
+
+test('duplicate contents share one request', async () => {
+  let n = 0;
+  const mock = llm((req) => {
+    n += 1;
+    const paths = pathsOf(req);
+    assert.ok(paths.includes('a.py') && paths.includes('b.py'));
+    return response('yes', 4, 1, 5);
+  });
+  const result = await filterRelevant(
+    { 'a.py': 'SAME', 'b.py': 'SAME' },
+    'task',
+    { ...baseOpts, model: 'm', callLlm: mock.fn },
+  );
+  assert.equal(n, 1);
+  assert.equal(result.decisions[0].cached, false);
+  assert.equal(result.decisions[1].cached, true);
+  assert.equal(result.billedTokens, 5);
+  assert.deepEqual(Object.keys(result.files).sort(), ['a.py', 'b.py']);
+  assert.equal(result.files['a.py'], 'SAME');
 });
 
 test('concurrency stays bounded and result order follows the input', async () => {
-  const names = ['a', 'b', 'c', 'd', 'e', 'f'];
-  const files = Object.fromEntries(names.map((n) => [n, `body ${n}`]));
-  const mock = llm(names.map(() => 'yes'));
-  const decisions = await filterRelevant(files, 'all', {
-    model: 'cheap-test',
-    concurrency: 2,
-    cache: null,
+  const names = Array.from({ length: 10 }, (_, i) => `file-${i}.py`);
+  const files = Object.fromEntries(names.map((name, i) => [name, `body ${i}\n`]));
+  const mock = llm(async (req) => {
+    const header = req.messages[1].content.split('File contents:')[0];
+    if (header.includes('file-9.py')) await new Promise((r) => setTimeout(r, 40));
+    else await new Promise((r) => setTimeout(r, 15));
+    const relevant = header.includes('file-1.py') || header.includes('file-9.py');
+    return response(relevant ? 'yes' : 'no', 1, 1, 2);
+  });
+  const result = await filterRelevant(files, 'touch file-1 and file-9', {
+    model: 'm',
+    concurrency: 3,
+    cache: false,
+    apiKey: 'k',
     callLlm: mock.fn,
   });
-  assert.deepEqual(decisions.map((d) => d.path), names);
-  assert.equal(mock.stats().maxInFlight, 2);
-  assert.equal(mock.stats().count, 6);
+  assert.ok(mock.stats().maxInFlight <= 3);
+  assert.ok(mock.stats().maxInFlight >= 2);
+  assert.deepEqual(result.decisions.map((d) => d.path), names);
+  assert.deepEqual(Object.keys(result.files).sort(), ['file-1.py', 'file-9.py']);
 });
 
-test('cache is keyed by model, task hash, and content hash', async () => {
-  const cache = createMemoryCache();
-  const first = llm(['yes — greeting']);
-  const files = { 'greet.py': 'print("hello")\n' };
-  const task = 'change the greeting';
-  await filterRelevant(files, task, { model: 'cheap-a', cache, callLlm: first.fn });
-
-  const second = llm(['no']);
-  const again = await filterRelevant({ 'other.py': 'print("hello")\n' }, task, {
-    model: 'cheap-a',
-    cache,
-    callLlm: second.fn,
+test('binary and oversize policies keep original contents on yes', async () => {
+  let n = 0;
+  const mock = llm((req) => {
+    n += 1;
+    const user = req.messages[1].content;
+    assert.equal(user.includes('SECRET_TAIL'), false);
+    if (user.includes('contents omitted')) {
+      assert.ok(user.includes('bin.dat'));
+      return response('no');
+    }
+    return response('yes — prefix is enough');
   });
-  assert.equal(second.stats().count, 0);
-  assert.equal(again[0].cached, true);
-  assert.equal(again[0].path, 'other.py');
-  assert.equal(again[0].decision, 'yes');
-  assert.equal(again[0].reason, 'greeting');
-  assert.equal(again[0].tokens, 11);
+  const binary = 'hello\0world';
+  const huge = `PREFIX ${'x'.repeat(80)} SECRET_TAIL`;
+  const limits = { maxBytes: 40, maxTokens: null };
 
-  const otherTask = llm(['no']);
-  const moved = await filterRelevant(files, 'rename the function', {
-    model: 'cheap-a',
-    cache,
-    callLlm: otherTask.fn,
-  });
-  assert.equal(moved[0].cached, false);
-  assert.equal(moved[0].decision, 'no');
+  const excluded = await filterRelevant(
+    { 'bin.dat': binary, 'big.py': huge },
+    'edit the prefix',
+    { model: 'm', cache: false, onBinary: 'exclude', onOversize: 'exclude', ...limits, callLlm: mock.fn },
+  );
+  assert.equal(n, 0);
+  assert.deepEqual(excluded.files, {});
+  const excludedBy = Object.fromEntries(excluded.decisions.map((d) => [d.path, d]));
+  assert.equal(excludedBy['bin.dat'].decision, 'no');
+  assert.equal(excludedBy['bin.dat'].skippedReason, 'binary');
+  assert.equal(excludedBy['big.py'].decision, 'no');
+  assert.equal(excludedBy['big.py'].skippedReason, 'oversize');
+  assert.equal(excludedBy['big.py'].tokens, 0);
+  assert.equal(excludedBy['big.py'].reason.includes('over size threshold'), true);
 
-  const otherModel = llm(['no']);
-  const remodeled = await filterRelevant(files, task, {
-    model: 'cheap-b',
-    cache,
-    callLlm: otherModel.fn,
-  });
-  assert.equal(remodeled[0].cached, false);
-  assert.equal(otherModel.stats().count, 1);
+  const included = await filterRelevant(
+    { 'bin.dat': binary, 'big.py': huge },
+    'edit the prefix',
+    { model: 'm', cache: false, onBinary: 'include', onOversize: 'include', ...limits, callLlm: mock.fn },
+  );
+  assert.equal(n, 0);
+  assert.deepEqual(Object.keys(included.files).sort(), ['big.py', 'bin.dat']);
+  assert.equal(included.files['big.py'], huge);
+  assert.equal(included.files['bin.dat'], binary);
+  assert.deepEqual(included.decisions.map((d) => d.decision), ['yes', 'yes']);
 
-  const stored = [];
-  const custom = {
-    async get(key) {
-      stored.push(['get', key]);
-      return undefined;
+  n = 0;
+  const truncated = await filterRelevant(
+    { 'bin.dat': new Uint8Array([0, 1, ...Buffer.from('BINARY_PREVIEW')]), 'big.py': huge },
+    'edit the prefix',
+    {
+      model: 'm',
+      cache: false,
+      apiKey: 'k',
+      onBinary: 'truncate',
+      onOversize: 'truncate',
+      ...limits,
+      callLlm: mock.fn,
     },
-    async set(key, value) {
-      stored.push(['set', key, value.decision]);
-    },
-  };
-  await filterRelevant({ p: 'body' }, 'task', { model: 'm', cache: custom, callLlm: llm(['yes']).fn });
-  const set = stored.find((row) => row[0] === 'set');
-  assert.ok(set);
-  const parts = set[1].split('\0');
-  assert.equal(parts.length, 3);
-  assert.equal(parts[0], 'm');
-  assert.match(parts[1], /^[0-9a-f]{64}$/);
-  assert.match(parts[2], /^[0-9a-f]{64}$/);
-  assert.notEqual(parts[1], parts[2]);
+  );
+  assert.equal(n, 2);
+  const truncatedBy = Object.fromEntries(truncated.decisions.map((d) => [d.path, d]));
+  assert.equal(truncatedBy['big.py'].decision, 'yes');
+  assert.equal(truncatedBy['big.py'].skippedReason, 'truncated');
+  assert.equal(truncated.files['big.py'], huge);
+  assert.equal(truncatedBy['bin.dat'].decision, 'no');
+  assert.equal(truncatedBy['bin.dat'].skippedReason, 'truncated');
+  assert.equal('bin.dat' in truncated.files, false);
 });
 
-test('ambiguous answers are not cached', async () => {
-  const cache = createMemoryCache();
-  const first = llm(['maybe']);
-  await filterRelevant({ a: 'body' }, 'task', { model: 'm', cache, callLlm: first.fn });
-  const second = llm(['no']);
-  const decisions = await filterRelevant({ a: 'body' }, 'task', { model: 'm', cache, callLlm: second.fn });
-  assert.equal(second.stats().count, 1);
-  assert.equal(decisions[0].decision, 'no');
-  assert.equal(decisions[0].cached, false);
+test('a truncated judgment is not reused as a full read', async () => {
+  let n = 0;
+  const mock = llm((req) => {
+    n += 1;
+    const user = req.messages[1].content;
+    return response(user.includes('truncated') ? 'no' : 'yes');
+  });
+  const dir = mkdtempSync(join(tmpdir(), 'patchling-filter-'));
+  const cache = new RelevanceCache(join(dir, 'cache.json'));
+  const files = { 'big.py': `PREFIX ${'x'.repeat(50)}` };
+  const first = await filterRelevant(files, 'task', {
+    model: 'm', cache, apiKey: 'k', maxBytes: 20, maxTokens: null, onOversize: 'truncate', callLlm: mock.fn,
+  });
+  const second = await filterRelevant(files, 'task', {
+    model: 'm', cache, apiKey: 'k', maxBytes: 10_000, maxTokens: null, callLlm: mock.fn,
+  });
+  assert.equal(first.decisions[0].decision, 'no');
+  assert.equal(first.decisions[0].skippedReason, 'truncated');
+  assert.equal(second.decisions[0].decision, 'yes');
+  assert.equal(second.decisions[0].cached, false);
+  assert.equal(second.decisions[0].skippedReason, null);
+  assert.equal(n, 2);
+  const stored = JSON.parse(readFileSync(cache.path, 'utf8'));
+  const variants = Object.keys(stored.entries).map((key) => key.split('\n')[3]);
+  assert.ok(variants.includes('truncated:None:20'));
+  assert.ok(variants.includes('full'));
 });
 
-test('default model and the shared memory cache', async () => {
-  const prev = process.env.GPTDIFF_FILTER_MODEL;
-  setEnv('GPTDIFF_FILTER_MODEL', 'from-env');
+test('maxBytes counts UTF-8 bytes and a token cap truncates before the byte cap', async () => {
+  const seen = [];
+  const mock = llm((req) => {
+    seen.push(bodyOf(req));
+    return response('yes');
+  });
+  const accented = 'é';
+  const excluded = await filterRelevant({ a: accented, b: 'b' }, 't', {
+    ...baseOpts,
+    maxBytes: 1,
+    maxTokens: null,
+    onOversize: 'exclude',
+    callLlm: mock.fn,
+  });
+  assert.equal(excluded.decisions[0].skippedReason, 'oversize');
+  assert.equal(excluded.decisions[0].decision, 'no');
+  assert.equal(excluded.decisions[1].decision, 'yes');
+  assert.equal(excluded.decisions[1].skippedReason, null);
+
+  const exact = await filterRelevant({ a: 'abcd' }, 't', {
+    ...baseOpts, maxBytes: 4, maxTokens: null, callLlm: mock.fn,
+  });
+  assert.equal(exact.decisions[0].skippedReason, null);
+  assert.equal(exact.files.a, 'abcd');
+
+  const long = 'y'.repeat(40);
+  const truncated = await filterRelevant({ a: long }, 't', {
+    ...baseOpts, maxBytes: null, maxTokens: 4, callLlm: mock.fn,
+  });
+  assert.equal(countTokens(long) > 4, true);
+  assert.equal(truncated.decisions[0].skippedReason, 'truncated');
+  assert.equal(truncated.files.a, long);
+  assert.equal(seen.at(-1), long.slice(0, 16));
+});
+
+test('zero disables both size limits', async () => {
+  const seen = [];
+  const mock = llm((req) => {
+    seen.push(req.messages[1].content);
+    return response('yes');
+  });
+  const body = 'y'.repeat(250_000);
+  const result = await filterRelevant({ 'big.py': body }, 'read the whole file', {
+    ...baseOpts,
+    maxBytes: 0,
+    maxTokens: 0,
+    onOversize: 'truncate',
+    callLlm: mock.fn,
+  });
+  assert.equal(Object.keys(result.files).length, 1);
+  assert.equal(seen[0].includes('truncated to fit'), false);
+  assert.ok(seen[0].includes(body));
+  assert.equal(result.files['big.py'], body);
+});
+
+test('missing api key throws only when a call is required', async () => withEnv(async () => {
+  const prev = process.env.GPTDIFF_LLM_API_KEY;
+  delete process.env.GPTDIFF_LLM_API_KEY;
+  setEnv('GPTDIFF_LLM_API_KEY', undefined);
   try {
-    const mock = llm(['yes']);
-    const task = `env-model-${Date.now()}`;
-    await filterRelevant({ a: `unique-${task}` }, task, { cache: undefined, callLlm: mock.fn });
-    assert.equal(mock.calls[0].model, 'from-env');
-    const again = llm(['no']);
-    const hit = await filterRelevant({ b: `unique-${task}` }, task, { callLlm: again.fn });
-    assert.equal(again.stats().count, 0);
-    assert.equal(hit[0].cached, true);
+    const skipped = await filterRelevant({ 'bin.dat': '\0' }, 'task', {
+      model: 'm',
+      cache: false,
+      onBinary: 'exclude',
+      callLlm: () => { throw new Error('should not be called'); },
+    });
+    assert.deepEqual(skipped.files, {});
+
+    await assert.rejects(
+      () => filterRelevant({ 'a.py': 'x = 1\n' }, 'task', {
+        model: 'm',
+        cache: false,
+        callLlm: () => { throw new Error('should not be called'); },
+      }),
+      /GPTDIFF_LLM_API_KEY/,
+    );
+  } finally {
+    setEnv('GPTDIFF_LLM_API_KEY', undefined);
+    if (prev === undefined) delete process.env.GPTDIFF_LLM_API_KEY;
+    else process.env.GPTDIFF_LLM_API_KEY = prev;
+  }
+}));
+
+test('cached files do not need an api key', async () => withEnv(async () => {
+  const prev = process.env.GPTDIFF_LLM_API_KEY;
+  delete process.env.GPTDIFF_LLM_API_KEY;
+  setEnv('GPTDIFF_LLM_API_KEY', undefined);
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    return response('no');
+  });
+  try {
+    const cache = createMemoryCache();
+    assert.ok(cache instanceof RelevanceCache);
+    const files = { 'a.py': 'x = 1\n' };
+    await filterRelevant(files, 'task', { model: 'm', cache, apiKey: 'k', callLlm: mock.fn });
+    const result = await filterRelevant(files, 'task', { model: 'm', cache, callLlm: mock.fn });
+    assert.equal(n, 1);
+    assert.equal(result.decisions[0].cached, true);
+    assert.equal(result.decisions[0].decision, 'no');
+  } finally {
+    setEnv('GPTDIFF_LLM_API_KEY', undefined);
+    if (prev === undefined) delete process.env.GPTDIFF_LLM_API_KEY;
+    else process.env.GPTDIFF_LLM_API_KEY = prev;
+  }
+}));
+
+test('invalid arguments throw', async () => {
+  await assert.rejects(
+    () => filterRelevant({ 'a.py': 'x' }, 'task', { concurrency: 0, cache: false, apiKey: 'k' }),
+    /concurrency/,
+  );
+  await assert.rejects(
+    () => filterRelevant({ 'a.py': 'x' }, 'task', { onOversize: 'drop', cache: false, apiKey: 'k' }),
+    /onOversize/,
+  );
+  await assert.rejects(
+    () => filterRelevant({ 'a.py': 'x' }, '  ', { cache: false, apiKey: 'k' }),
+    /task/,
+  );
+  await assert.rejects(
+    () => filterRelevant([['a.py', 'x']], 'task', { cache: false, apiKey: 'k' }),
+    TypeError,
+  );
+  await assert.rejects(
+    () => filterRelevant({ 'a.py': 'x' }, 'task', { cache: {}, apiKey: 'k' }),
+    TypeError,
+  );
+  await assert.rejects(
+    () => filterRelevant({ 'a.py': 1 }, 'task', { cache: false, apiKey: 'k', callLlm: llm(['yes']).fn }),
+    TypeError,
+  );
+});
+
+test('model defaults to GPTDIFF_FILTER_MODEL, else gemini-2.0-flash', async () => withEnv(async () => {
+  const prevFilter = process.env.GPTDIFF_FILTER_MODEL;
+  const prevBase = process.env.GPTDIFF_LLM_BASE_URL;
+  delete process.env.GPTDIFF_FILTER_MODEL;
+  setEnv('GPTDIFF_FILTER_MODEL', undefined);
+  setEnv('GPTDIFF_LLM_BASE_URL', 'https://example.test/v1/');
+  const seen = [];
+  const mock = llm((req) => {
+    seen.push(req);
+    return response('yes');
+  });
+  try {
+    const fromEnv = await filterRelevant({ 'a.py': 'x = 1\n' }, 'task', {
+      cache: false,
+      apiKey: 'from-arg',
+      callLlm: mock.fn,
+    });
+    setEnv('GPTDIFF_FILTER_MODEL', 'env-filter-model');
+    const named = await filterRelevant({ 'a.py': 'x = 1\n' }, 'task', {
+      cache: false,
+      apiKey: 'from-arg',
+      callLlm: mock.fn,
+    });
+    assert.equal(seen[0].model, DEFAULT_FILTER_MODEL);
+    assert.equal(fromEnv.model, 'gemini-2.0-flash');
+    assert.equal(seen[0].baseUrl, 'https://example.test/v1/');
+    assert.equal(seen[0].apiKey, 'from-arg');
+    assert.ok(seen[0].messages[1].content.startsWith('You are a relevance filter'));
+    assert.equal(named.model, 'env-filter-model');
+    assert.equal(seen[1].model, 'env-filter-model');
+    assert.equal(seen[1].messages[1].content.startsWith('You are a relevance filter'), false);
   } finally {
     setEnv('GPTDIFF_FILTER_MODEL', undefined);
-    if (prev === undefined) delete process.env.GPTDIFF_FILTER_MODEL;
-    else process.env.GPTDIFF_FILTER_MODEL = prev;
+    setEnv('GPTDIFF_LLM_BASE_URL', undefined);
+    if (prevFilter === undefined) delete process.env.GPTDIFF_FILTER_MODEL;
+    else process.env.GPTDIFF_FILTER_MODEL = prevFilter;
+    if (prevBase === undefined) delete process.env.GPTDIFF_LLM_BASE_URL;
+    else process.env.GPTDIFF_LLM_BASE_URL = prevBase;
   }
-  assert.equal(typeof DEFAULT_FILTER_MODEL, 'string');
-  assert.equal(DEFAULT_FILTER_MAX_BYTES, 262144);
+  assert.equal(DEFAULT_FILTER_MODEL, 'gemini-2.0-flash');
+  assert.equal(DEFAULT_FILTER_MAX_BYTES, 200_000);
+  assert.equal(DEFAULT_FILTER_MAX_TOKENS, 12_000);
+  assert.equal(DEFAULT_FILTER_MAX_OUTPUT_TOKENS, 256);
+  assert.equal(DEFAULT_FILTER_CONCURRENCY, 8);
+  assert.equal(isBinaryContent('hello\0world'), true);
+  assert.equal(isBinaryContent('plain text'), false);
+  assert.equal(countTokens(''), 0);
+  assert.equal(countTokens('abcd'), 1);
+}));
+
+test('omitting cache does not reuse a previous call', async () => {
+  let n = 0;
+  const mock = llm(() => {
+    n += 1;
+    return response('yes');
+  });
+  await filterRelevant({ a: 'body' }, 'task', { model: 'm', apiKey: 'k', callLlm: mock.fn });
+  await filterRelevant({ a: 'body' }, 'task', { model: 'm', apiKey: 'k', callLlm: mock.fn });
+  assert.equal(n, 2);
+});
+
+test('dumpDecisions writes camelCase decisions', async () => {
+  const mock = llm(() => response('yes — keep'));
+  const result = await filterRelevant({ 'a.py': 'v = 1\n' }, 'task', { ...baseOpts, callLlm: mock.fn });
+  const dir = mkdtempSync(join(tmpdir(), 'patchling-filter-'));
+  const dest = join(dir, 'out', 'decisions.json');
+  mkdirSync(join(dir, 'out'), { recursive: true });
+  await dumpDecisions(result, dest);
+  const saved = JSON.parse(readFileSync(dest, 'utf8'));
+  assert.deepEqual(saved.files, ['a.py']);
+  assert.equal(saved.decisions[0].promptTokens, 11);
+  assert.equal(saved.decisions[0].skippedReason, null);
+  assert.equal('skipped_reason' in saved.decisions[0], false);
+  assert.equal(saved.billedTokens, 14);
 });
 
 test('buildEnvironment includes only yes files when decisions are passed', () => {
@@ -333,8 +641,8 @@ test('buildEnvironment includes only yes files when decisions are passed', () =>
   const decisions = [
     { path: 'greet.py', decision: 'yes' },
     { path: 'main.py', decision: 'no' },
-    { path: 'math_utils.py', decision: 'skip', skippedReason: 'binary' },
-    { path: 'logo.bin', decision: 'skip', skippedReason: 'too-large' },
+    { path: 'math_utils.py', decision: 'no', skippedReason: 'binary' },
+    { path: 'logo.bin', decision: 'no', skippedReason: 'oversize' },
   ];
   const filtered = buildEnvironment(files, { decisions });
   assert.match(filtered, /File: greet\.py/);
@@ -345,7 +653,7 @@ test('buildEnvironment includes only yes files when decisions are passed', () =>
   assert.equal(filtered, buildEnvironment(files, decisions));
 
   const includedByError = buildEnvironment(files, {
-    decisions: [{ path: 'main.py', decision: 'yes', error: 'ambiguous answer' }],
+    decisions: [{ path: 'main.py', decision: 'yes', error: 'Error: connection reset' }],
   });
   assert.match(includedByError, /File: main\.py/);
   assert.doesNotMatch(includedByError, /greet/);

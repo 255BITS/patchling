@@ -66,7 +66,7 @@ function decisionsFrom(opts) {
  * Opt-in relevance filter: pass `{ decisions }` from `filterRelevant` and
  * only files whose decision is `"yes"` are included. An array of those
  * decisions is also accepted as the second argument. Omit it and every file
- * is included, in insertion order. Skipped and `"no"` files stay out of the
+ * is included, in insertion order. Every other file stays out of the
  * string that `generateDiff` sees.
  *
  * @param {Record<string, string>} filesDict

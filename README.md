@@ -64,7 +64,7 @@ Configuration comes from environment variables (Node) or `setEnv(...)` overrides
 | `GPTDIFF_LLM_API_KEY` | NanoGPT API key (`sk-nano-…`) | — (required for live calls) |
 | `GPTDIFF_LLM_BASE_URL` | OpenAI-compatible base URL | `https://nano-gpt.com/api/v1/` |
 | `GPTDIFF_MODEL` | Model id | `xiaomi/mimo-v2.5-pro-ultraspeed` |
-| `GPTDIFF_FILTER_MODEL` | Cheap model for `filterRelevant` | `xiaomi/mimo-v2.5-pro-ultraspeed` |
+| `GPTDIFF_FILTER_MODEL` | Cheap model for `filterRelevant` | `gemini-2.0-flash` |
 
 ```js
 import { setEnv } from 'patchling';
@@ -102,38 +102,43 @@ Builds the prompt, calls the LLM, and returns the unified diff extracted from th
 - `opts.callLlm` — inject a custom/mock completion client (used heavily in tests).
 - `opts.onUsage` — optional callback invoked with `{ promptTokens, completionTokens, totalTokens }` after the LLM call completes, so callers can surface cost/usage without changing the `Promise<string>` return type.
 
-### `filterRelevant(files, task, opts?) → Promise<Decision[]>`
-Opt-in pass for a large file map. Each candidate file is sent, in full, with the task to a cheap model that answers `is this file relevant to the task? yes/no`. Only `yes` files should be handed to `generateDiff`. `smartapply` still takes the full map, so files the diff never mentions are left as they were.
+### `filterRelevant(files, task, opts?) → Promise<Result>`
+Opt-in pass for a large file map. Each candidate file is sent with the task to a cheap model that answers `is this file relevant to the task? yes/no`. `result.files` is the `yes` map, in input order, with the original contents. Hand that to `generateDiff`. `smartapply` still takes the full map, so files the diff never mentions are left as they were.
 
 ```js
 import { filterRelevant, buildEnvironment, generateDiff, smartapply } from 'patchling';
 
-const decisions = await filterRelevant(files, task, {
-  model: 'xiaomi/mimo-v2.5-pro-ultraspeed', // GPTDIFF_FILTER_MODEL, else this cheap default
+const result = await filterRelevant(files, task, {
+  // model: 'gemini-2.0-flash',            // GPTDIFF_FILTER_MODEL, else this default
   concurrency: 8,                           // max in-flight calls
-  // cache: null,                           // default is an in-memory cache
-  // maxBytes: 262144,                      // skip larger files; null disables
+  // cache: null,                           // omit for a fresh in-memory cache; a path string persists it
+  // maxBytes: 200000,                      // 0 or null disables
+  // maxTokens: 12000,                      // input-token cap; 0 or null disables
+  // onOversize: 'truncate',                // include | exclude | truncate
+  // onBinary: 'exclude',                   // include | exclude | truncate
   onDecision(d) { console.log(d.path, d.decision); },
 });
-const diff = await generateDiff(buildEnvironment(files, { decisions }), task, { model });
+const diff = await generateDiff(buildEnvironment(result.files), task, { model });
 const next = await smartapply(diff, files);
 ```
 
-- `opts.model`, `opts.apiKey`, `opts.baseUrl` — same key and base URL resolution as `generateDiff` (`GPTDIFF_LLM_API_KEY`, `GPTDIFF_LLM_BASE_URL`).
+- `opts.model`, `opts.apiKey`, `opts.baseUrl` — same key and base URL resolution as `generateDiff` (`GPTDIFF_LLM_API_KEY`, `GPTDIFF_LLM_BASE_URL`). The model falls back to `GPTDIFF_FILTER_MODEL`, then `gemini-2.0-flash`.
 - `opts.concurrency` — at most this many classifications in flight (default 8).
-- `opts.cache` — `get(key)` / `set(key, value)`, sync or async. The key is `model`, SHA-256 of the task, and SHA-256 of the contents, separated by NUL. Omit it for a process-wide in-memory cache (`createMemoryCache()` builds another). `null` turns caching off. Definitive yes/no answers are stored; errors and ambiguous answers are not.
-- `opts.maxBytes` — UTF-8 size cap (default 262144). Larger files, and files that look binary (a NUL, or a dense run of control bytes), are not sent.
-- `opts.onDecision` — called as each file finishes, in completion order. The returned array stays in input order.
+- `opts.cache` — a `RelevanceCache`, a `{ get, set }` object, or a filesystem path (Node writes `{ version: 1, entries }` atomically; a corrupt file is ignored). Omit it, or pass `true`, for a fresh in-memory cache used only by this call. `null` and `false` turn caching off. `createMemoryCache()` builds another memory cache you can share. The key is the model, SHA-256 of the task, SHA-256 of the original contents, and a variant tag (`full`, `binary-preview`, or `truncated:<maxTokens>:<maxBytes>`), separated by newlines. Thrown errors are not stored.
+- `opts.maxBytes` — UTF-8 size cap (default 200000). `opts.maxTokens` — input-token cap (default 12000; estimated as characters / 4). `0` or `null` disables either limit.
+- `opts.onOversize` and `opts.onBinary` — `include` (keep, no model call), `exclude` (drop, no model call), or `truncate` (ask about a preview). Defaults are `truncate` and `exclude`. A `yes` on a truncated preview still forwards the original text in `result.files`.
+- `opts.onDecision` — called as each file finishes, in completion order. `result.decisions` stays in input order.
 - `opts.callLlm` — inject a mock client.
 
-Each decision is `{ path, decision, raw, tokens, cached, skippedReason, error, reason }`.
+Each decision is `{ path, decision, reason, raw, tokens, promptTokens, completionTokens, cached, skippedReason, error }`.
 
-- `decision` is `"yes"`, `"no"`, or `"skip"`.
-- `skippedReason` is `"binary"`, `"too-large"`, or `null`.
-- Ambiguous text (after `<think>` blocks are stripped) and a thrown call become `"yes"` with `error` set, so a bad answer cannot drop a file. `error` is `"ambiguous answer"` or the thrown message.
-- `buildEnvironment(files, { decisions })` keeps only `"yes"` paths. Passing the decisions array itself does the same. With no second argument, every file is included.
+- `decision` is `"yes"` or `"no"`. Ambiguous text (after `<think>` / `<thinking>` blocks are stripped) and a thrown call become `"yes"`, so a bad answer cannot drop a file. `error` is set only when the call throws.
+- `skippedReason` is `"binary"`, `"oversize"`, `"truncated"`, or `null`.
+- `tokens`, `promptTokens`, and `completionTokens` are `0` when no model call was made. `reason` is a string.
+- `result.billedTokens` sums token counts for decisions that were not cache hits. Identical file bodies share one request; the later paths are `cached: true`.
+- `buildEnvironment(files, { decisions })` keeps only `"yes"` paths. Passing the decisions array itself does the same. With no second argument, every file is included. `buildEnvironment(result.files)` is the same set.
 
-Python (`filter_relevant` in [patchling-py](https://github.com/255BITS/patchling-py)) takes the same arguments in snake_case: `max_bytes`, `on_decision`, and `skipped_reason` on each decision. `build_environment(files, decisions=decisions)` keeps the `"yes"` files.
+Python (`filter_relevant` in [patchling-py](https://github.com/255BITS/patchling-py)) returns the same result. Its fields are snake_case: `max_bytes`, `max_tokens`, `on_oversize`, `on_binary`, `skipped_reason`, `prompt_tokens`, `completion_tokens`.
 
 ### `smartapply(diffText, files, opts?) → Promise<{ path: content }>`
 Applies a diff to an in-memory file map with per-file, LLM-assisted conflict resolution (runs files concurrently). Handles creation, modification, and deletion; `<think>…</think>` and reasoning preambles are stripped automatically. Returns a **new** map; deleted files are omitted.
@@ -146,14 +151,14 @@ Applies a diff to an in-memory file map with per-file, LLM-assisted conflict res
 Deterministic, no-LLM patch application (the strict "basic" applier). `changed` is `true` iff something was created, modified, or deleted; `files` is the updated map (equal to the input on failure — no partial writes).
 
 ### Other exports
-`parseDiffPerFile`, `buildEnvironment`, `filterRelevant`, `createMemoryCache`, `parseRelevanceAnswer`, `colorCodeDiff`, `swallowReasoning`, `stripBadOutput`, `extractDiffBlocks`, `callLlm`, `resolveApiKey`, `resolveBaseUrl`, `getEnv`, `setEnv`, and the `oauth` namespace.
+`parseDiffPerFile`, `buildEnvironment`, `filterRelevant`, `RelevanceCache`, `createMemoryCache`, `parseRelevanceAnswer`, `isBinaryContent`, `countTokens`, `formatFilterSummary`, `dumpDecisions`, `colorCodeDiff`, `swallowReasoning`, `stripBadOutput`, `extractDiffBlocks`, `callLlm`, `resolveApiKey`, `resolveBaseUrl`, `getEnv`, `setEnv`, and the `oauth` namespace.
 
 ## Differences from the Python package
 
 - **No filesystem.** `applyDiff`/`smartapply` take and return a `{ path: content }` map rather than reading/writing a project directory.
 - **Scope.** Only `generateDiff` + `smartapply` (and their dependencies) are ported — not the Python package's CLIs (`patchling`, `patchling-apply`).
 - **Dependency injection** replaces Python's `monkeypatch`: pass `callLlm` / `callLlmForApply` to test without a network.
-- **`fetch` + Web Crypto** replace `openai`/`requests`/`tiktoken`.
+- **`fetch` + Web Crypto** replace `openai`/`requests`/`tiktoken`. Relevance token counts use the same characters/4 estimate Python uses when tiktoken is absent. A disk-backed `RelevanceCache` is Node-only; the browser keeps the in-memory cache.
 
 ## License
 
