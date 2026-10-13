@@ -12,11 +12,17 @@ builds from Git on its side.
 | Git repository | `255BITS/patchling` |
 | Production branch | `main` |
 | Automatic production deployments | enabled |
-| Preview deployments | all non-production branches (PRs get a preview comment) |
+| Preview deployments | `all` |
 | Build command | *(none)* |
 | Build output directory | `landing` |
 | Root directory | *(repo root)* |
-| Custom domains | `patchling.app`, `patchling.pages.dev` |
+| Custom domains (exact set) | `patchling.app`, `patchling.pages.dev` |
+
+`scripts/check-pages-settings.mjs` holds these values as `EXPECTED`, and
+`test/check_pages_settings.test.js` fails if this table and `EXPECTED`
+disagree. "Preview deployments `all`" means every non-production branch gets
+a preview (and PRs get a preview comment). The domain set is exact: a
+missing or extra domain is drift.
 
 Because the build output is `landing/` with no build step, everything the
 page loads must live under `landing/`. `landing/lib/*.js` are byte-identical
@@ -40,12 +46,23 @@ CI cannot see the dashboard settings above.
 Read-only, with an API token that has *Cloudflare Pages: Read*:
 
 ```sh
-CF_ACCOUNT_ID=9a79801cc6e129d0ab3447ff14820c4a scripts/check-pages-settings.sh
+CF_ACCOUNT_ID=9a79801cc6e129d0ab3447ff14820c4a node scripts/check-pages-settings.mjs
 ```
 
-It prints the production branch, whether production deployments are enabled,
-the build output directory, the domains, and the latest production commit,
-and exits non-zero if any differs from the table above. It never writes.
+Or check a saved response from
+`GET /accounts/{account}/pages/projects/patchling`:
+
+```sh
+node scripts/check-pages-settings.mjs --from-file response.json
+node scripts/check-pages-settings.mjs --from-file - < response.json
+```
+
+It prints one line per row of the table above and exits 1 if any differs
+(production branch, automatic production deployments, preview setting,
+build command, output directory, root directory, the exact domain set, or
+the repository), 2 on an API or input error. It never writes.
+`npm test` runs it offline against `test/fixtures/pages/` with a negative case
+for each check.
 
 Last verified 2026-10-13 via the API: production branch `main`,
 automatic production deployments enabled, preview deployments `all`,
