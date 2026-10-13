@@ -1,10 +1,12 @@
 /** Offline fixtures for scripts/check-pages-settings.mjs (see docs/deploy.md). */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkPagesProject, EXPECTED } from '../scripts/check-pages-settings.mjs';
+import { checkPagesProject, EXPECTED, unwrapEnvelope } from '../scripts/check-pages-settings.mjs';
 
 const fixturePath = fileURLToPath(new URL('./fixtures/pages/project-ok.json', import.meta.url));
 const script = fileURLToPath(new URL('../scripts/check-pages-settings.mjs', import.meta.url));
@@ -35,6 +37,7 @@ const negatives = {
   'no domains': [(p) => { delete p.domains; }, ['domains']],
   'wrong production branch': [(p) => { p.production_branch = 'develop'; p.source.config.production_branch = 'develop'; }, ['productionBranch']],
   'source branch disagrees': [(p) => { p.source.config.production_branch = 'develop'; }, ['source.productionBranch']],
+  'PR preview comments off': [(p) => { p.source.config.pr_comments_enabled = false; }, ['prCommentsEnabled']],
   'auto production off': [(p) => { p.source.config.production_deployments_enabled = false; }, ['productionDeploymentsEnabled']],
   'wrong repo': [(p) => { p.source.config.repo_name = 'patchling-py'; }, ['repo']],
 };
@@ -66,6 +69,7 @@ test('docs/deploy.md table matches EXPECTED exactly', () => {
     'Production branch': `\`${EXPECTED.productionBranch}\``,
     'Automatic production deployments': EXPECTED.productionDeploymentsEnabled ? 'enabled' : 'disabled',
     'Preview deployments': `\`${EXPECTED.previewDeploymentSetting}\``,
+    'PR preview comments': EXPECTED.prCommentsEnabled ? 'enabled' : 'disabled',
     'Build command': EXPECTED.buildCommand ? `\`${EXPECTED.buildCommand}\`` : '*(none)*',
     'Build output directory': `\`${EXPECTED.destinationDir}\``,
     'Root directory': EXPECTED.rootDir ? `\`${EXPECTED.rootDir}\`` : '*(repo root)*',
@@ -74,4 +78,46 @@ test('docs/deploy.md table matches EXPECTED exactly', () => {
   for (const [label, value] of Object.entries(rows)) {
     assert.ok(doc.includes(`| ${label} | ${value} |`), `docs/deploy.md row: | ${label} | ${value} |`);
   }
+});
+
+const badEnvelopes = {
+  'success:false with errors and matching project': (r) => { r.success = false; r.errors = [{ code: 10000, message: 'Authentication error' }]; },
+  'success:false with result null': (r) => { r.success = false; r.errors = [{ code: 8000007, message: 'Project not found' }]; r.result = null; },
+  'missing success': (r) => { delete r.success; },
+  'missing result': (r) => { delete r.result; },
+  'success:true with result null': (r) => { r.result = null; },
+  'success as a string': (r) => { r.success = 'true'; },
+  'result is an array': (r) => { r.result = []; },
+};
+
+for (const [name, mutate] of Object.entries(badEnvelopes)) {
+  const r = ok();
+  mutate(r);
+  const json = JSON.stringify(r);
+  test(`envelope exits 2 via --from-file: ${name}`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'pages-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const file = join(dir, 'response.json');
+    writeFileSync(file, json);
+    const run = spawnSync(process.execPath, [script, '--from-file', file], { encoding: 'utf8', env: {} });
+    assert.equal(run.status, 2, run.stdout + run.stderr);
+    assert.match(run.stderr, /error: /);
+  });
+  test(`envelope exits 2 via stdin: ${name}`, () => {
+    const run = spawnSync(process.execPath, [script, '--from-file', '-'], { input: json, encoding: 'utf8', env: {} });
+    assert.equal(run.status, 2, run.stdout + run.stderr);
+  });
+}
+
+test('non-JSON input exits 2 via stdin and --from-file', (t) => {
+  const run = spawnSync(process.execPath, [script, '--from-file', '-'], { input: 'not json', encoding: 'utf8', env: {} });
+  assert.equal(run.status, 2);
+  const dir = mkdtempSync(join(tmpdir(), 'pages-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, 'r.json'), '');
+  assert.equal(spawnSync(process.execPath, [script, '--from-file', join(dir, 'r.json')], { encoding: 'utf8', env: {} }).status, 2);
+});
+
+test('unwrapEnvelope returns the project of a good envelope', () => {
+  assert.equal(unwrapEnvelope(ok()).name, 'patchling');
 });

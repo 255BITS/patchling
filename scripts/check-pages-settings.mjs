@@ -15,6 +15,7 @@ export const EXPECTED = Object.freeze({
   productionBranch: 'main',
   productionDeploymentsEnabled: true,
   previewDeploymentSetting: 'all',
+  prCommentsEnabled: true,
   buildCommand: '',
   destinationDir: 'landing',
   rootDir: '',
@@ -37,6 +38,7 @@ export function checkPagesProject(response) {
     productionBranch: r.production_branch ?? src.production_branch ?? null,
     productionDeploymentsEnabled: src.production_deployments_enabled ?? null,
     previewDeploymentSetting: src.preview_deployment_setting ?? null,
+    prCommentsEnabled: src.pr_comments_enabled ?? null,
     buildCommand: bc.build_command ?? '',
     destinationDir: bc.destination_dir ?? null,
     rootDir: bc.root_dir ?? '',
@@ -57,6 +59,27 @@ export function checkPagesProject(response) {
   const meta = (dep.deployment_trigger && dep.deployment_trigger.metadata) || {};
   const info = `latest production: ${meta.branch ?? '?'} @ ${String(meta.commit_hash || '').slice(0, 7)} ${dep.created_on || ''}`.trim();
   return { ok: checks.every((c) => c.ok), checks, info };
+}
+
+/**
+ * Validate a Cloudflare API envelope and return its project. Live mode and
+ * --from-file share this: anything but `success: true` with an object
+ * `result` throws, and the CLI exits 2.
+ * @param {any} body
+ * @returns {object}
+ */
+export function unwrapEnvelope(body) {
+  if (body == null || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error('API response is not a JSON object');
+  }
+  if (body.success !== true) {
+    const detail = body.success === false ? `success:false ${JSON.stringify(body.errors || [])}` : 'missing or non-boolean success';
+    throw new Error(`API envelope rejected: ${detail}`);
+  }
+  if (body.result == null || typeof body.result !== 'object' || Array.isArray(body.result)) {
+    throw new Error('API envelope rejected: missing or non-object result');
+  }
+  return body.result;
 }
 
 /** @param {ReturnType<typeof checkPagesProject>} report */
@@ -81,16 +104,19 @@ async function load(argv) {
   const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${account}/pages/projects/${project}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const body = await res.json();
-  if (!res.ok || body.success === false) {
-    throw new Error(`Cloudflare API ${res.status}: ${JSON.stringify(body.errors || [])}`);
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    throw new Error(`Cloudflare API ${res.status}: response is not JSON`);
   }
+  if (!res.ok) throw new Error(`Cloudflare API ${res.status}: ${JSON.stringify((body && body.errors) || [])}`);
   return body;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   try {
-    const report = checkPagesProject(await load(process.argv.slice(2)));
+    const report = checkPagesProject(unwrapEnvelope(await load(process.argv.slice(2))));
     console.log(formatReport(report));
     process.exit(report.ok ? 0 : 1);
   } catch (err) {

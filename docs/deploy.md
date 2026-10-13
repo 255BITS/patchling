@@ -13,6 +13,7 @@ builds from Git on its side.
 | Production branch | `main` |
 | Automatic production deployments | enabled |
 | Preview deployments | `all` |
+| PR preview comments | enabled |
 | Build command | *(none)* |
 | Build output directory | `landing` |
 | Root directory | *(repo root)* |
@@ -21,7 +22,8 @@ builds from Git on its side.
 `scripts/check-pages-settings.mjs` holds these values as `EXPECTED`, and
 `test/check_pages_settings.test.js` fails if this table and `EXPECTED`
 disagree. "Preview deployments `all`" means every non-production branch gets
-a preview (and PRs get a preview comment). The domain set is exact: a
+a preview, and "PR preview comments" (`pr_comments_enabled`) posts its URL
+on each PR. The domain set is exact: a
 missing or extra domain is drift.
 
 Because the build output is `landing/` with no build step, everything the
@@ -59,8 +61,12 @@ node scripts/check-pages-settings.mjs --from-file - < response.json
 
 It prints one line per row of the table above and exits 1 if any differs
 (production branch, automatic production deployments, preview setting,
+PR preview comments,
 build command, output directory, root directory, the exact domain set, or
-the repository), 2 on an API or input error. It never writes.
+the repository). It exits 2 on an API or input error, including a saved
+or live envelope that is not `success: true` with an object `result`
+(`success: false`, a missing `success` or `result`, `result: null`, or
+invalid JSON), even when the project data would match. It never writes.
 `npm test` runs it offline against `test/fixtures/pages/` with a negative case
 for each check.
 
