@@ -1064,22 +1064,28 @@ async function cachePut(store, key, record) {
 }
 
 /**
- * Python-style option names that filterRelevant would otherwise ignore
- * silently, mapped to the camelCase name it reads.
+ * Snake_case option names, mapped to what to pass in JavaScript. Covers
+ * every keyword of patchling-py `filter_relevant(...)` (files, task, model,
+ * concurrency and cache share their names), plus snake_case spellings of
+ * JS-only options. Without this guard they are ignored silently.
  */
-const SNAKE_CASE_OPTIONS = {
-  max_bytes: 'maxBytes',
-  max_tokens: 'maxTokens',
-  max_output_tokens: 'maxOutputTokens',
-  on_oversize: 'onOversize',
-  on_binary: 'onBinary',
-  on_decision: 'onDecision',
-  reasoning_effort: 'reasoningEffort',
-  retry_base_ms: 'retryBaseMs',
-  api_key: 'apiKey',
-  base_url: 'baseUrl',
-  call_llm: 'callLlm',
-};
+export const SNAKE_CASE_OPTIONS = Object.freeze({
+  api_key: 'use apiKey',
+  base_url: 'use baseUrl',
+  max_bytes: 'use maxBytes',
+  max_tokens: 'use maxTokens',
+  on_oversize: 'use onOversize',
+  on_binary: 'use onBinary',
+  max_output_tokens: 'use maxOutputTokens',
+  skip_patterns: 'use ignore (an array replaces DEFAULT_IGNORE_PATTERNS; [] or false classifies every path)',
+  max_attempts: 'use retries, which counts extra attempts: retries = max_attempts - 1',
+  retry_backoff: 'use retryBaseMs, in milliseconds: retryBaseMs = retry_backoff * 1000',
+  sleep: 'not supported in JS; backoff uses timers. In tests pass retryBaseMs: 0 to skip the waits',
+  call_llm: 'use callLlm',
+  on_decision: 'use onDecision',
+  reasoning_effort: 'use reasoningEffort',
+  retry_base_ms: 'use retryBaseMs',
+});
 
 /**
  * Reject snake_case option names (the patchling-py spelling). Without this,
@@ -1089,8 +1095,8 @@ const SNAKE_CASE_OPTIONS = {
 function rejectSnakeCaseOptions(opts) {
   const wrong = Object.keys(opts).filter((key) => Object.prototype.hasOwnProperty.call(SNAKE_CASE_OPTIONS, key));
   if (!wrong.length) return;
-  const fixes = wrong.map((key) => `${key} -> ${SNAKE_CASE_OPTIONS[key]}`).join(', ');
-  throw new TypeError(`filterRelevant options are camelCase in JavaScript: ${fixes}`);
+  const fixes = wrong.map((key) => `${key}: ${SNAKE_CASE_OPTIONS[key]}`).join('; ');
+  throw new TypeError(`filterRelevant options are camelCase in JavaScript. ${fixes}`);
 }
 
 /**
