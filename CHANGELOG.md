@@ -1,8 +1,8 @@
 # Changelog
 
-## [0.2.1] — Unreleased
+## [0.3.0] — 2026-10-12
 
-Not tagged and not published. `package.json` is `0.2.1`; the only release tag and the npm `latest` dist-tag are still `0.2.0` (`gptdiff-js`).
+Adds the NanoGPT relevance filter (decision model per file) and the follow-up fixes from review.
 
 ### smartapply
 

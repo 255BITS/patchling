@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -59,12 +60,14 @@ test('unreleased entry must be a heading for that version, not a later one', () 
   assert.equal(changelogHasUnreleasedEntry('## 0.2.1\n\nUnreleased.\n', '0.2.1'), true);
 });
 
+const PKG_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+
 test('this checkout passes the main release check', () => {
   // actions/checkout leaves tags unfetched, so CI has no v0.2.0. A full
   // clone does. Either way the script must accept this unreleased 0.2.1.
   const run = spawnSync(process.execPath, [script, '--main'], { encoding: 'utf8' });
   assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
-  assert.match(run.stdout, /0\.2\.1/);
+  assert.match(run.stdout, new RegExp(PKG_VERSION.replace(/[.]/g, '\\.')));
   const latest = latestReleaseTag(listGitTags());
   if (latest) {
     assert.match(run.stdout, new RegExp(latest.tag.replace(/[.]/g, '\\.')));
@@ -76,5 +79,5 @@ test('this checkout passes the main release check', () => {
 test('a mismatched tag fails the CLI', () => {
   const run = spawnSync(process.execPath, [script, '--tag', 'v0.2.0'], { encoding: 'utf8' });
   assert.equal(run.status, 1);
-  assert.match(run.stderr, /v0\.2\.0 does not match package.json version 0\.2\.1/);
+  assert.match(run.stderr, new RegExp(`v0\\.2\\.0 does not match package.json version ${PKG_VERSION.replace(/[.]/g, '\\.')}`));
 });
