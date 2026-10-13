@@ -43,7 +43,7 @@
   </div>
 
   <label for="model">Model</label>
-  <input id="model" value="xiaomi/mimo-v2.5-pro-ultraspeed" />
+  <input id="model" value="xiaomi/mimo-v2.6-flash" />
 
   <label for="files">Files (JSON object of path → content)</label>
   <textarea id="files">{
@@ -63,9 +63,11 @@
   <pre id="filesOut">—</pre>
 
   <script type="module">
-    import { generateDiff, smartapply, buildEnvironment, setEnv, getEnv, DEFAULT_MODEL } from './src/index.js';
+    import { generateDiff, smartapply, buildEnvironment, setEnv, getEnv } from './src/index.js';
     import { beginSignIn, completeSignIn, registerClient } from './src/oauth.js';
 
+    // Browser-demo default; library defaults remain independently configurable.
+    const DEFAULT_MODEL = 'xiaomi/mimo-v2.6-flash';
     const $ = (id) => document.getElementById(id);
     const authStatus = $('authStatus');
 

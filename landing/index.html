@@ -735,9 +735,10 @@ import { registerClient, beginSignIn, completeSignIn }
 import { filterRelevant, DEFAULT_FILTER_MODEL } from "./relevance.js";
 
 const $ = (id) => document.getElementById(id);
-const DEFAULT_MODEL = "zai-org/glm-5.2:thinking";
+const DEFAULT_MODEL = "xiaomi/mimo-v2.6-flash";
 // Repairs are small, scoped rewrites — a fast non-thinking model keeps them snappy.
-const APPLY_MODEL = "xiaomi/mimo-v2.5-pro-ultraspeed";
+const APPLY_MODEL = DEFAULT_MODEL;
+const decisionEffort = (model) => model === DEFAULT_FILTER_MODEL ? "none" : undefined;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -981,7 +982,10 @@ let running = false;
 /* ---------- key + model storage ---------- */
 const getKey = () => localStorage.getItem("pl_key");
 const setKey = (k) => (k ? localStorage.setItem("pl_key", k) : localStorage.removeItem("pl_key"));
-let MODEL = localStorage.getItem("pl_model") || DEFAULT_MODEL;
+// Replace previous factory picks; preserve visitors' custom model choices.
+const savedModel = localStorage.getItem("pl_model");
+let MODEL = savedModel && !["zai-org/glm-5.2:thinking", "xiaomi/mimo-v2.5-pro-ultraspeed"].includes(savedModel)
+  ? savedModel : DEFAULT_MODEL;
 
 /* ---------- model picker (same pattern as the live examples) ---------- */
 let allModels = null, topOrder = new Map();
@@ -994,7 +998,7 @@ const LABS = [
   ["Qwen", /qwen[0-9.]*-max/i],
   ["Mistral", /mistral-large/i],
 ];
-const PINNED = [DEFAULT_MODEL, "xiaomi/mimo-v2.5-pro-ultraspeed", "moonshotai/kimi-k2.7-code"];
+const PINNED = [DEFAULT_MODEL, "xiaomi/mimo-v2.6-pro", "z-ai/glm-5.3-flash"];
 const SMALL = /flash|nano|\blite\b|\bmini\b|-mini|\bsmall\b|tiny|oss|guard|preview|search|codex|:(low|medium|high)\b|cheaper|multi-agent|-\d+b\b|a\d+b\b|^tee\//i;
 const px = (x) => (x == null ? null : "$" + Number(x).toFixed(2));
 const priceOf = (id) => (allModels || []).find((m) => m.id === id);
@@ -1030,7 +1034,7 @@ async function loadModels() {
     const headers = {}; const k = getKey(); if (k) headers.Authorization = `Bearer ${k}`;
     arr = (await (await fetch("https://nano-gpt.com/api/v1/models?detailed=true", { headers })).json()).data || [];
   } catch { /* offline / blocked — the exact-id path still works */ }
-  allModels = arr.map((m) => ({ id: m.id, prompt: m.pricing?.prompt, completion: m.pricing?.completion })).filter((m) => m.id);
+  allModels = arr.map((m) => ({ id: m.id, prompt: m.pricing?.prompt, completion: m.pricing?.completion, created: m.created })).filter((m) => m.id);
   if (!allModels.length) allModels = [{ id: DEFAULT_MODEL }];
   computeTop();
   allModels.sort((a, b) => (rank(a.id) - rank(b.id)) || a.id.localeCompare(b.id));
@@ -1694,6 +1698,8 @@ async function collectDecisions(inputFiles, goal, runId, runModel) {
   const result = await filterRelevant(inputFiles, goal, {
     apiKey: getKey(),
     model: runModel,
+    // MiMo supports none/high; avoid thinking overhead for the yes/no demo.
+    reasoningEffort: decisionEffort(runModel),
     maxBytes: scn.maxBytes,
     maxTokens: scn.maxTokens,
     onOversize: scn.onOversize,
