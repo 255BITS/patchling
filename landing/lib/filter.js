@@ -1064,6 +1064,36 @@ async function cachePut(store, key, record) {
 }
 
 /**
+ * Python-style option names that filterRelevant would otherwise ignore
+ * silently, mapped to the camelCase name it reads.
+ */
+const SNAKE_CASE_OPTIONS = {
+  max_bytes: 'maxBytes',
+  max_tokens: 'maxTokens',
+  max_output_tokens: 'maxOutputTokens',
+  on_oversize: 'onOversize',
+  on_binary: 'onBinary',
+  on_decision: 'onDecision',
+  reasoning_effort: 'reasoningEffort',
+  retry_base_ms: 'retryBaseMs',
+  api_key: 'apiKey',
+  base_url: 'baseUrl',
+  call_llm: 'callLlm',
+};
+
+/**
+ * Reject snake_case option names (the patchling-py spelling). Without this,
+ * `{ on_binary: 'include' }` is dropped and the default `exclude` applies.
+ * @param {object} opts
+ */
+function rejectSnakeCaseOptions(opts) {
+  const wrong = Object.keys(opts).filter((key) => Object.prototype.hasOwnProperty.call(SNAKE_CASE_OPTIONS, key));
+  if (!wrong.length) return;
+  const fixes = wrong.map((key) => `${key} -> ${SNAKE_CASE_OPTIONS[key]}`).join(', ');
+  throw new TypeError(`filterRelevant options are camelCase in JavaScript: ${fixes}`);
+}
+
+/**
  * Ask a cheap model which files are relevant to `task`.
  *
  * `files` is a `{ path: content }` map (string or byte array). The returned
@@ -1107,8 +1137,10 @@ async function cachePut(store, key, record) {
  * @param {string} [opts.baseUrl] `GPTDIFF_LLM_BASE_URL` when omitted
  * @param {Function} [opts.callLlm] injectable client (tests)
  * @returns {Promise<FilterRelevantResult>}
+ * @throws {TypeError} when an option uses the Python snake_case name (`on_binary`, `max_bytes`, ...)
  */
 export async function filterRelevant(files, task, opts = {}) {
+  if (opts != null && typeof opts === 'object') rejectSnakeCaseOptions(opts);
   if (files == null || typeof files !== 'object' || Array.isArray(files)) {
     throw new TypeError('files must be an object of path -> content');
   }

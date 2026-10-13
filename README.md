@@ -144,6 +144,7 @@ const next = await smartapply(diff, files);
 Each decision is `{ path, decision, reason, raw, tokens, promptTokens, completionTokens, cached, skippedReason, error }`.
 
 - `decision` is `"yes"` or `"no"`. After `<think>` / `<thinking>` blocks are stripped, the decision is a leading standalone `yes` or `no` (quotes, markdown bold, backticks, and an `Answer:` or `Decision:` prefix are wrappers, including when a reason follows, as in `**no** unrelated`). Any other wording, including a negated "no" later in the sentence, is malformed: the file is included, `failedOpen` is true, and the judgment is not cached. An empty answer, a non-string message content, and a thrown call do the same. `error` is set when the call throws or the answer is empty. `result.failedOpen` counts those files, and `formatFilterSummary` includes that count.
+- Options are camelCase. A Python-style name such as `on_binary`, `max_bytes`, or `reasoning_effort` throws a `TypeError` that names the camelCase spelling, instead of being ignored and leaving the default in place.
 - `skippedReason` is `"binary"`, `"oversize"`, `"truncated"`, `"ignored"`, or `null`.
 - `tokens`, `promptTokens`, and `completionTokens` are `0` when no model call was made. `reason` is a string. `failedOpen` is true only when the file was included without a definitive yes/no.
 - `result.billedTokens` sums token counts for decisions that were not cache hits. Identical contents at different paths are separate calls.
