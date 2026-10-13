@@ -63,8 +63,8 @@ test('unreleased entry must be a heading for that version, not a later one', () 
 const PKG_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 test('this checkout passes the main release check', () => {
-  // actions/checkout leaves tags unfetched, so CI has no v0.2.0. A full
-  // clone does. Either way the script must accept this unreleased 0.2.1.
+  // A released package.json matches its vX.Y.Z tag. The test job fetches
+  // tags (fetch-depth: 0); a depth-1 checkout has none and fails closed.
   const run = spawnSync(process.execPath, [script, '--main'], { encoding: 'utf8' });
   assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
   assert.match(run.stdout, new RegExp(PKG_VERSION.replace(/[.]/g, '\\.')));

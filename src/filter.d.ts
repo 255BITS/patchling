@@ -32,9 +32,10 @@ export function countTokens(text: string): number;
 /**
  * True when `content` looks like a binary file (NUL, invalid UTF-8, or a
  * dense run of non-text controls). The whole payload is validated. An
- * incomplete trailing sequence is tolerated only when it ends on the
- * 8192-byte probe boundary. Non-text values other than byte arrays are not
- * binary; {@link filterRelevant} rejects them when it coerces the file.
+ * incomplete trailing sequence keeps the valid prefix (`0x61 0xC3` is `"a"`,
+ * not binary). A non-empty buffer that decodes to empty text is binary.
+ * Non-text values other than byte arrays are not binary;
+ * {@link filterRelevant} rejects them when it coerces the file.
  * @param {unknown} content
  * @returns {boolean}
  */

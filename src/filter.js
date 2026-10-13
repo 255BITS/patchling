@@ -555,9 +555,10 @@ const UTF8_PROBE_BYTES = 8192;
 /**
  * True when `content` looks like a binary file (NUL, invalid UTF-8, or a
  * dense run of non-text controls). The whole payload is validated. An
- * incomplete trailing sequence is tolerated only when it ends on the
- * 8192-byte probe boundary. Non-text values other than byte arrays are not
- * binary; {@link filterRelevant} rejects them when it coerces the file.
+ * incomplete trailing sequence keeps the valid prefix (`0x61 0xC3` is `"a"`,
+ * not binary). A non-empty buffer that decodes to empty text is binary.
+ * Non-text values other than byte arrays are not binary;
+ * {@link filterRelevant} rejects them when it coerces the file.
  * @param {unknown} content
  * @returns {boolean}
  */
@@ -611,10 +612,6 @@ function decodeUtf8AllowingShortTail(sample) {
 }
 
 /**
- * @param {Uint8Array} bytes
- * @returns {boolean}
- */
-/**
  * Decode `bytes` as UTF-8, preserving a leading BOM (U+FEFF).
  * Returns null when the buffer is not valid UTF-8.
  * @param {Uint8Array} bytes
@@ -629,16 +626,14 @@ function decodeStrictUtf8(bytes) {
 }
 
 /**
- * Text for a valid UTF-8 payload. A buffer of exactly {@link UTF8_PROBE_BYTES}
- * may end on an incomplete sequence; that prefix is text. Any other invalid
- * byte, including one past the probe, is binary (`null`).
+ * Text for a UTF-8 payload. A truncated trailing sequence keeps the valid
+ * prefix (`0x61 0xC3` is `"a"`). Any other invalid byte is binary (`null`).
  * @param {Uint8Array} bytes
  * @returns {string | null}
  */
 function decodeTextBytes(bytes) {
   const text = decodeStrictUtf8(bytes);
   if (text != null) return text;
-  if (bytes.length !== UTF8_PROBE_BYTES) return null;
   return decodeUtf8AllowingShortTail(bytes);
 }
 

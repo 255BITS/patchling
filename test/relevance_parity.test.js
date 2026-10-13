@@ -21,7 +21,7 @@ const fixturePath = fileURLToPath(new URL('./fixtures/parity/relevance.json', im
 const fixtureBytes = readFileSync(fixturePath);
 const fixture = JSON.parse(fixtureBytes.toString('utf8'));
 
-const FIXTURE_SHA256 = '6976ad71714be0138a6043d9bdeb724abe34a65515f8389913dca10a0c48c4f2';
+const FIXTURE_SHA256 = 'c5f3bd4af43ff2a2036b8012c2ed69c70cd9b2c09281bc58e864fb0194eebe5c';
 
 function lengthPrefixed(parts) {
   const chunks = [];
@@ -171,6 +171,10 @@ test('parity fixture: binary detection tolerates only a short trailing sequence'
     bytes.set(row.tail, row.pad);
     assert.equal(isBinaryContent(bytes), row.binary, row.name);
   }
+  const kept = fixture.binary.cases.find((row) => row.text != null);
+  assert.equal(kept.name, 'truncated tail keeps prefix');
+  assert.equal(kept.binary, false);
+  assert.equal(kept.text, 'a');
   const late = fixture.binary.cases.find((row) => row.name === '8192 ASCII + 0xff + TAIL');
   assert.ok(late);
   assert.equal(late.binary, true);

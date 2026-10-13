@@ -1250,6 +1250,53 @@ test('a bad response envelope fails open, stays uncached, and does not abort oth
   assert.equal(n, 7);
 });
 
+test('a truncated UTF-8 tail keeps the valid prefix', async () => {
+  const bytes = Uint8Array.from([0x61, 0xc3]);
+  assert.equal(isBinaryContent(bytes), false);
+  let body = '';
+  const result = await filterRelevant({ 'a.py': bytes }, 'task', {
+    ...baseOpts,
+    callLlm: async (req) => {
+      body = req.messages[1].content;
+      return response('yes');
+    },
+  });
+  assert.equal(result.decisions[0].skippedReason, null);
+  assert.equal(result.files['a.py'], 'a');
+  assert.match(body, /File contents:\na\n\nIs this file relevant/);
+  assert.equal(body.includes('\uFFFD'), false);
+});
+
+test('an ignored binary file is excluded before any UTF-8 decode', async () => {
+  const Original = globalThis.TextDecoder;
+  let decodes = 0;
+  globalThis.TextDecoder = class SpyDecoder extends Original {
+    decode(...args) {
+      decodes += 1;
+      return super.decode(...args);
+    }
+  };
+  try {
+    const bytes = Uint8Array.from([0x61, 0xc3, 0xff, 0x00]);
+    const result = await filterRelevant(
+      { 'dist/app.min.js': bytes, 'src/keep.js': 'export const n = 1;\n' },
+      'task',
+      {
+        ...baseOpts,
+        callLlm: async () => response('yes'),
+      },
+    );
+    const ignored = result.decisions.find((decision) => decision.path === 'dist/app.min.js');
+    assert.equal(ignored.decision, 'no');
+    assert.equal(ignored.skippedReason, 'ignored');
+    assert.equal('dist/app.min.js' in result.files, false);
+    assert.equal(decodes, 0);
+    assert.equal(result.files['src/keep.js'], 'export const n = 1;\n');
+  } finally {
+    globalThis.TextDecoder = Original;
+  }
+});
+
 test('8192 ASCII + 0xff + TAIL is binary and included bytes stay original', async () => {
   const bytes = new Uint8Array(8192 + 1 + 4);
   bytes.fill(0x61, 0, 8192);
