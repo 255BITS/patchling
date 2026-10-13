@@ -1215,6 +1215,7 @@ function renderScenarios() {
 }
 
 function selectScenario(key) {
+  invalidateRun();
   scenarioKey = key;
   const scn = SCENARIOS[key];
   files = { ...scn.files };
@@ -1228,6 +1229,7 @@ function selectScenario(key) {
   renderEditors();
   renderPreview();
   clearOutputs();
+  renderRun();
 }
 
 function renderSampleSelection() {
@@ -1248,7 +1250,12 @@ function renderEditors() {
     const ta = document.createElement("textarea");
     ta.rows = Math.min(10, Math.max(4, content.split("\n").length + 1));
     ta.value = content;
-    ta.addEventListener("input", () => { files[path] = ta.value; renderPreview(); });
+    ta.addEventListener("input", () => {
+      files[path] = ta.value;
+      invalidateRun();
+      renderPreview();
+      renderRun();
+    });
     div.append(label, ta);
     wrap.appendChild(div);
   }
@@ -1361,6 +1368,10 @@ function beginRun() {
 function isCurrentRun(runId) {
   return runId === activeRun;
 }
+function invalidateRun() {
+  activeRun += 1;
+  running = false;
+}
 function classifierTokens(decisions) {
   if (!decisions) return 0;
   let total = 0;
@@ -1372,28 +1383,42 @@ function classifierCost(decisions, price) {
   let tokens = 0;
   let prompt = 0;
   let completion = 0;
-  let priced = true;
+  let unknown = false;
+  const usage = [];
   for (const decision of list) {
     const total = Number(decision && decision.tokens) || 0;
     tokens += total;
-    const hasSplit = !!(decision && (decision.promptTokens != null || decision.completionTokens != null));
-    if (total > 0 && !hasSplit) priced = false;
-    if (hasSplit) {
-      prompt += Number(decision.promptTokens) || 0;
-      completion += Number(decision.completionTokens) || 0;
+    const promptTokens = decision ? decision.promptTokens : null;
+    const completionTokens = decision ? decision.completionTokens : null;
+    usage.push({ tokens: decision ? decision.tokens : null, promptTokens, completionTokens });
+    const hasPrompt = promptTokens != null && promptTokens !== "";
+    const hasCompletion = completionTokens != null && completionTokens !== "";
+    if (!hasPrompt || !hasCompletion) {
+      if (total > 0) unknown = true;
+      continue;
     }
+    const promptN = Number(promptTokens);
+    const completionN = Number(completionTokens);
+    if (!Number.isFinite(promptN) || !Number.isFinite(completionN)) {
+      if (total > 0) unknown = true;
+      continue;
+    }
+    if (total > 0 && promptN === 0 && completionN === 0) unknown = true;
+    prompt += promptN;
+    completion += completionN;
   }
   let dollars = null;
-  if (priced && price && price.prompt != null && price.completion != null) {
+  if (!unknown && price && price.prompt != null && price.completion != null) {
     dollars = (prompt * Number(price.prompt) + completion * Number(price.completion)) / 1000000;
   }
-  return { tokens, dollars };
+  return { tokens, dollars, unknown, usage };
 }
 function formatClassifierCost(decisions, price) {
   const cost = classifierCost(decisions, price);
   const noun = cost.tokens === 1 ? "token" : "tokens";
   let text = "classifier " + cost.tokens + " " + noun;
-  if (cost.dollars != null) text += " · $" + cost.dollars.toFixed(4);
+  if (cost.unknown) text += " · cost unknown";
+  else if (cost.dollars != null) text += " · $" + cost.dollars.toFixed(4);
   return text;
 }
 /* PLAYGROUND_HELPERS:END */
@@ -1401,7 +1426,7 @@ function formatClassifierCost(decisions, price) {
 // The punchline, told only after it happened: which files git apply would
 // have bounced, and what smartapply did about it. Built from the actual run
 // outcome, so it's just as true in real mode as in the canned demo.
-function renderVerdict(perFile, inputFiles, updated, llmResolved, decisions) {
+function renderVerdict(perFile, inputFiles, updated, llmResolved, decisions, price) {
   const v = $("verdict");
   v.innerHTML = "";
   const repaired = [...llmResolved].filter((p) => p in updated);
@@ -1431,7 +1456,7 @@ function renderVerdict(perFile, inputFiles, updated, llmResolved, decisions) {
     line("ok", "✓ smartapply — " + okBits.join(" · "));
   }
 
-  if (decisions) line("ok", formatClassifierCost(decisions, priceOf(FILTER_MODEL)));
+  if (decisions) line("ok", formatClassifierCost(decisions, price));
 
   if (mode === "demo" && SCENARIOS[scenarioKey].reveal) {
     const why = document.createElement("p");
@@ -1470,6 +1495,8 @@ async function run() {
   const goal = $("goal").value.trim();
   if (!goal) return;
   const runId = beginRun();
+  const runModel = FILTER_MODEL;
+  const runPrice = priceOf(runModel);
   const inputFiles = { ...files };
 
   running = true;
@@ -1498,7 +1525,7 @@ async function run() {
     if (filtering) {
       $("decisionwrap").style.display = "block";
       $("filtersrc").textContent = mode === "demo" ? "· pre-recorded decisions" : "· live, cheap model";
-      decisions = await collectDecisions(inputFiles, goal, runId);
+      decisions = await collectDecisions(inputFiles, goal, runId, runModel);
       if (!isCurrentRun(runId)) return;
     }
 
@@ -1580,9 +1607,9 @@ async function run() {
     renderEditors();
     renderPreview();
 
-    renderVerdict(perFile, inputFiles, updated, llmResolved, decisions);
+    renderVerdict(perFile, inputFiles, updated, llmResolved, decisions, runPrice);
 
-    const cost = decisions ? formatClassifierCost(decisions, priceOf(FILTER_MODEL)) : "";
+    const cost = decisions ? formatClassifierCost(decisions, runPrice) : "";
     $("phase").textContent = cost
       ? "done ✓ — " + cost + " — the preview and files above are the new map"
       : "done ✓ — the preview and files above are the new map";
@@ -1634,7 +1661,7 @@ function renderDecision(d) {
   $("decisionlist").appendChild(row);
 }
 
-async function collectDecisions(inputFiles, goal, runId) {
+async function collectDecisions(inputFiles, goal, runId, runModel) {
   if (mode === "demo") {
     const canned = SCENARIOS[scenarioKey].decisions || {};
     const out = [];
@@ -1666,7 +1693,7 @@ async function collectDecisions(inputFiles, goal, runId) {
   const scn = SCENARIOS[scenarioKey];
   const result = await filterRelevant(inputFiles, goal, {
     apiKey: getKey(),
-    model: FILTER_MODEL,
+    model: runModel,
     maxBytes: scn.maxBytes,
     maxTokens: scn.maxTokens,
     onOversize: scn.onOversize,

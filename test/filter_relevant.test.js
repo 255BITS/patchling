@@ -125,6 +125,15 @@ test('parseRelevanceAnswer: quoted yes/no is a decision', () => {
   assert.equal(parseRelevanceAnswer('Decision: "no"').decision, 'no');
 });
 
+test('parseRelevanceAnswer: a quoted decision followed by a reason is that decision', () => {
+  assert.equal(parseRelevanceAnswer('**no** unrelated').decision, 'no');
+  assert.equal(parseRelevanceAnswer('"no" unrelated').decision, 'no');
+  assert.equal(parseRelevanceAnswer('\u201cno\u201d \u2014 unrelated').decision, 'no');
+  assert.equal(parseRelevanceAnswer('**yes** the helper').decision, 'yes');
+  assert.equal(parseRelevanceAnswer('nope').decision, null);
+  assert.equal(parseRelevanceAnswer('yes/no').decision, null);
+});
+
 test('parseRelevanceAnswer: negated "There is no doubt this file is required" is malformed', () => {
   const parsed = parseRelevanceAnswer('There is no doubt this file is required');
   assert.equal(parsed.decision, null);
@@ -1239,6 +1248,93 @@ test('a bad response envelope fails open, stays uncached, and does not abort oth
   });
   assert.equal(again.decisions[0].cached, false);
   assert.equal(n, 7);
+});
+
+test('8192 ASCII + 0xff + TAIL is binary and included bytes stay original', async () => {
+  const bytes = new Uint8Array(8192 + 1 + 4);
+  bytes.fill(0x61, 0, 8192);
+  bytes[8192] = 0xff;
+  bytes.set([0x54, 0x41, 0x49, 0x4c], 8193);
+  assert.equal(isBinaryContent(bytes), true);
+  let calls = 0;
+  const callLlm = async () => {
+    calls += 1;
+    return response('yes');
+  };
+  const excluded = await filterRelevant({ 'a.py': bytes }, 'task', {
+    ...baseOpts, onBinary: 'exclude', callLlm,
+  });
+  assert.equal(calls, 0);
+  assert.equal(excluded.decisions[0].decision, 'no');
+  assert.equal(excluded.decisions[0].skippedReason, 'binary');
+  assert.equal('a.py' in excluded.files, false);
+
+  const included = await filterRelevant({ 'a.py': bytes }, 'task', {
+    ...baseOpts, onBinary: 'include', callLlm,
+  });
+  assert.equal(calls, 0);
+  assert.equal(included.decisions[0].decision, 'yes');
+  assert.equal(included.decisions[0].skippedReason, 'binary');
+  assert.equal(included.files['a.py'], bytes);
+  assert.equal(included.files['a.py'][8192], 0xff);
+  assert.equal(Buffer.from(included.files['a.py'].subarray(8193)).toString('utf8'), 'TAIL');
+
+  const straddling = new Uint8Array(8191 + 2 + 4);
+  straddling.fill(0x61, 0, 8191);
+  straddling.set([0xc3, 0xa9], 8191);
+  straddling.set([0x54, 0x41, 0x49, 0x4c], 8193);
+  assert.equal(isBinaryContent(straddling), false);
+  let body = '';
+  const decoded = await filterRelevant({ 'a.py': straddling }, 'task', {
+    ...baseOpts,
+    callLlm: async (req) => {
+      body = req.messages[1].content;
+      return response('yes');
+    },
+  });
+  assert.equal(decoded.files['a.py'], `${'a'.repeat(8191)}éTAIL`);
+  assert.match(body, /éTAIL/);
+  assert.equal(String(decoded.files['a.py']).includes('\uFFFD'), false);
+});
+
+test('non-string message content fails open and is not cached', async () => {
+  let calls = 0;
+  const cache = new RelevanceCache();
+  const callLlm = async () => {
+    calls += 1;
+    return { choices: [{ message: { content: ['no'] } }], usage: { total_tokens: 4, prompt_tokens: 0, completion_tokens: 0 } };
+  };
+  const opts = { ...baseOpts, cache, callLlm, retries: 2, retryBaseMs: 0 };
+  const first = await filterRelevant({ 'a.py': 'x\n' }, 'task', opts);
+  const second = await filterRelevant({ 'a.py': 'x\n' }, 'task', opts);
+  assert.equal(first.decisions[0].decision, 'yes');
+  assert.equal(first.decisions[0].failedOpen, true);
+  assert.equal(first.decisions[0].cached, false);
+  assert.match(first.decisions[0].error, /envelope/);
+  assert.equal(first.files['a.py'], 'x\n');
+  assert.equal(second.decisions[0].cached, false);
+  assert.equal(second.decisions[0].failedOpen, true);
+  assert.equal(calls, 2);
+});
+
+test('a leading UTF-8 BOM is preserved in decoded text', async () => {
+  const bytes = Uint8Array.from([0xef, 0xbb, 0xbf, 0x68, 0x65, 0x6c, 0x6c, 0x6f]);
+  let body = '';
+  const result = await filterRelevant({ 'a.py': bytes }, 'task', {
+    ...baseOpts,
+    maxBytes: null,
+    maxTokens: null,
+    callLlm: async (req) => {
+      body = req.messages[1].content;
+      return response('yes');
+    },
+  });
+  assert.equal(result.decisions[0].skippedReason, null);
+  assert.equal(result.files['a.py'], '\uFEFFhello');
+  assert.equal(result.files['a.py'].charCodeAt(0), 0xfeff);
+  assert.match(body, /\uFEFFhello/);
+  assert.equal(countTokens('\uFEFFhello'), 2);
+  assert.equal(countTokens(result.files['a.py']), 2);
 });
 
 test('valid UTF-8 bytes are decoded and a changed buffer is a separate call', async () => {

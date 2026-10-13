@@ -8,10 +8,12 @@ export function createMemoryCache(): RelevanceCache;
  *
  * Think tags, one fenced block, and chain-of-thought reasoning are removed
  * first. Whitespace, quotes, markdown bold or backticks, and one `Answer:`
- * or `Decision:` prefix are wrappers. The first token must then be exactly
- * `yes` or `no`, and the next character must be the end of the string,
- * whitespace, or one of `. , ! : ; )`. Anything else is malformed (`null`);
- * callers include the file and do not cache it.
+ * or `Decision:` prefix are wrappers. Wrappers may sit on the decision word
+ * itself when a reason follows (`**no** unrelated`, `"no" unrelated`). The
+ * first token must then be exactly `yes` or `no`, and the next character
+ * must be the end of the string, whitespace, or one of `. , ! : ; )`.
+ * Anything else is malformed (`null`); callers include the file and do not
+ * cache it.
  *
  * @param {unknown} raw
  * @returns {{ decision: 'yes' | 'no' | null, cleaned: string }}
@@ -28,9 +30,11 @@ export function parseRelevanceAnswer(raw: unknown): {
  */
 export function countTokens(text: string): number;
 /**
- * True when `content` looks like a binary file (NUL or a dense run of
- * non-text controls). Non-text values other than byte arrays are not binary;
- * {@link filterRelevant} rejects them when it coerces the file.
+ * True when `content` looks like a binary file (NUL, invalid UTF-8, or a
+ * dense run of non-text controls). The whole payload is validated. An
+ * incomplete trailing sequence is tolerated only when it ends on the
+ * 8192-byte probe boundary. Non-text values other than byte arrays are not
+ * binary; {@link filterRelevant} rejects them when it coerces the file.
  * @param {unknown} content
  * @returns {boolean}
  */
@@ -172,7 +176,9 @@ export const DEFAULT_IGNORE_PATTERNS: string[];
  */
 /**
  * @typedef {object} FilterRelevantResult
- * @property {Record<string, string>} files `yes` files in input order, original contents
+ * @property {Record<string, string | Uint8Array>} files `yes` files in input order.
+ *   Valid UTF-8 bytes are decoded to text, keeping a leading BOM. A binary
+ *   file kept by policy is the original value, bytes untouched.
  * @property {RelevanceDecision[]} decisions one per input file, in input order
  * @property {string} model
  * @property {RelevanceDecision[]} errors decisions whose call threw
@@ -317,9 +323,11 @@ export type RelevanceDecision = {
 };
 export type FilterRelevantResult = {
     /**
-     * `yes` files in input order, original contents
+     * `yes` files in input order.
+     * Valid UTF-8 bytes are decoded to text, keeping a leading BOM. A binary
+     * file kept by policy is the original value, bytes untouched.
      */
-    files: Record<string, string>;
+    files: Record<string, string | Uint8Array>;
     /**
      * one per input file, in input order
      */
