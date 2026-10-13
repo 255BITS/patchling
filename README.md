@@ -55,6 +55,14 @@ npm test           # run the unit suite (Node's built-in test runner)
 npm run test:live  # hit NanoGPT for real (requires env vars, see below)
 ```
 
+The browser demos explicitly use `xiaomi/mimo-v2.6-flash` for diff generation
+and repair. The landing-page picker also pins `xiaomi/mimo-v2.6-pro` and
+`z-ai/glm-5.3-flash`. These IDs, capabilities, and prices were checked against
+[NanoGPT's public catalog](https://nano-gpt.com/api/v1/models?detailed=true)
+on 2026-10-13; the offline snapshot is in `test/fixtures/demo-models.json`.
+The decision demo requests MiMo's supported `none` reasoning effort.
+Library environment defaults below are independent of the demo choices.
+
 ## Configuration
 
 Configuration comes from environment variables (Node) or `setEnv(...)` overrides (browser). OAuth sign-in sets the API key override for you.
