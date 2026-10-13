@@ -554,9 +554,13 @@ const UTF8_PROBE_BYTES = 8192;
 
 /**
  * True when `content` looks like a binary file (NUL, invalid UTF-8, or a
- * dense run of non-text controls). The whole payload is validated. An
- * incomplete trailing sequence keeps the valid prefix (`0x61 0xC3` is `"a"`,
- * not binary). A non-empty buffer that decodes to empty text is binary.
+ * dense run of non-text controls). The whole payload is validated. A tail
+ * is kept only when it is a truncated but still-legal UTF-8 character at
+ * the exact end of the sample (`0x61 0xC3` and `0x61 0xE0 0xA0` are `"a"`).
+ * A lead that cannot start a character, a continuation outside 80-BF, or a
+ * second byte outside its range (E0 is A0-BF, ED is 80-9F, F0 is 90-BF,
+ * F4 is 80-8F) is binary. A non-empty buffer that decodes to empty text is
+ * binary.
  * Non-text values other than byte arrays are not binary;
  * {@link filterRelevant} rejects them when it coerces the file.
  * @param {unknown} content
@@ -582,8 +586,53 @@ function utf8SequenceLength(lead) {
 }
 
 /**
- * Decode `sample` as UTF-8. An incomplete trailing sequence of at most 3
- * bytes is dropped. Genuinely invalid bytes return null.
+ * Continuation bytes are 80-BF. C0, C1, and F5-FF never start a character,
+ * so {@link utf8SequenceLength} already rejects them as leads.
+ * @param {number} byte
+ * @returns {boolean}
+ */
+function isUtf8Continuation(byte) {
+  return byte >= 0x80 && byte <= 0xbf;
+}
+
+/**
+ * Second-byte range once the byte is known to be a continuation.
+ * E0 needs A0-BF, ED needs 80-9F, F0 needs 90-BF, F4 needs 80-8F.
+ * @param {number} lead
+ * @param {number} second
+ * @returns {boolean}
+ */
+function secondByteAllowed(lead, second) {
+  if (lead === 0xe0) return second >= 0xa0;
+  if (lead === 0xed) return second <= 0x9f;
+  if (lead === 0xf0) return second >= 0x90;
+  if (lead === 0xf4) return second <= 0x8f;
+  return true;
+}
+
+/**
+ * True when `sample[index .. index+have)` is a truncated but still-legal
+ * UTF-8 character ending on the last byte of the sample.
+ * @param {Uint8Array} sample
+ * @param {number} index
+ * @param {number} have
+ * @returns {boolean}
+ */
+function validPartialSequence(sample, index, have) {
+  const lead = sample[index];
+  const need = utf8SequenceLength(lead);
+  if (!need || need === 1 || have < 1 || have >= need || have > 3) return false;
+  for (let i = 1; i < have; i++) {
+    if (!isUtf8Continuation(sample[index + i])) return false;
+  }
+  if (have >= 2 && !secondByteAllowed(lead, sample[index + 1])) return false;
+  return true;
+}
+
+/**
+ * Decode `sample` as UTF-8. A tail is dropped only when it is a truncated
+ * but valid partial sequence at the exact end of `sample`. Any other
+ * invalid byte returns null.
  * @param {Uint8Array} sample
  * @returns {string | null}
  */
@@ -592,18 +641,17 @@ function decodeUtf8AllowingShortTail(sample) {
   try {
     return fatal().decode(sample);
   } catch {
-    // The sample is not well-formed. A cut at 8192 may end inside one character.
+    // Not well-formed. Only a legal partial character at the last byte is text.
   }
   let index = sample.length - 1;
   let continuations = 0;
-  while (continuations < 3 && index >= 0 && (sample[index] & 0xc0) === 0x80) {
+  while (continuations < 3 && index >= 0 && isUtf8Continuation(sample[index])) {
     continuations += 1;
     index -= 1;
   }
   if (index < 0) return null;
-  const need = utf8SequenceLength(sample[index]);
   const have = sample.length - index;
-  if (!need || have >= need || need - have > 3 || continuations !== have - 1) return null;
+  if (continuations !== have - 1 || !validPartialSequence(sample, index, have)) return null;
   try {
     return fatal().decode(sample.subarray(0, index));
   } catch {
@@ -626,8 +674,9 @@ function decodeStrictUtf8(bytes) {
 }
 
 /**
- * Text for a UTF-8 payload. A truncated trailing sequence keeps the valid
- * prefix (`0x61 0xC3` is `"a"`). Any other invalid byte is binary (`null`).
+ * Text for a UTF-8 payload. A truncated but still-legal trailing sequence
+ * keeps the valid prefix (`0x61 0xC3` and `0x61 0xE0 0xA0` are `"a"`).
+ * Any other invalid byte is binary (`null`).
  * @param {Uint8Array} bytes
  * @returns {string | null}
  */

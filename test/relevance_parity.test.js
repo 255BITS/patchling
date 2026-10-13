@@ -21,7 +21,7 @@ const fixturePath = fileURLToPath(new URL('./fixtures/parity/relevance.json', im
 const fixtureBytes = readFileSync(fixturePath);
 const fixture = JSON.parse(fixtureBytes.toString('utf8'));
 
-const FIXTURE_SHA256 = 'c5f3bd4af43ff2a2036b8012c2ed69c70cd9b2c09281bc58e864fb0194eebe5c';
+const FIXTURE_SHA256 = 'dbe5c7033b279be2a0b923d82dffb1349039b051e18a3650b224570374b8914b';
 
 function lengthPrefixed(parts) {
   const chunks = [];
