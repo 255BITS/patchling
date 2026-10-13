@@ -1250,6 +1250,131 @@ test('a bad response envelope fails open, stays uncached, and does not abort oth
   assert.equal(n, 7);
 });
 
+test('a truncated UTF-8 tail keeps the valid prefix', async () => {
+  const samples = [
+    { bytes: Uint8Array.from([0x61, 0xc3]), text: 'a' },
+    { bytes: Uint8Array.from([0x61, 0xe0, 0xa0]), text: 'a' },
+  ];
+  for (const prefix of [8192, 9000]) {
+    for (const tail of [[0xc3], [0xe0, 0xa0]]) {
+      const bytes = new Uint8Array(prefix + tail.length);
+      bytes.fill(0x61, 0, prefix);
+      bytes.set(tail, prefix);
+      samples.push({ bytes, text: 'a'.repeat(prefix) });
+    }
+  }
+  for (const sample of samples) {
+    assert.equal(isBinaryContent(sample.bytes), false);
+    let body = '';
+    const result = await filterRelevant({ 'a.py': sample.bytes }, 'task', {
+      ...baseOpts,
+      callLlm: async (req) => {
+        body = req.messages[1].content;
+        return response('yes');
+      },
+    });
+    assert.equal(result.decisions[0].skippedReason, null);
+    assert.equal(result.files['a.py'], sample.text);
+    assert.equal(body.includes(sample.text), true);
+    assert.equal(body.includes('\uFFFD'), false);
+  }
+});
+
+test('malformed UTF-8 tails stay binary under include, exclude, and fail-open', async () => {
+  const tails = [
+    [0xe0, 0x80],
+    [0xed, 0xa0],
+    [0xf0, 0x80],
+    [0xf4, 0x90],
+  ];
+  for (const prefix of [1, 8192, 9000]) {
+    for (const tail of tails) {
+      const bytes = new Uint8Array(prefix + tail.length);
+      bytes.fill(0x61, 0, prefix);
+      bytes.set(tail, prefix);
+      const label = `${prefix}+${Buffer.from(tail).toString('hex')}`;
+      assert.equal(isBinaryContent(bytes), true, label);
+
+      let calls = 0;
+      const callLlm = async () => {
+        calls += 1;
+        return response('yes');
+      };
+      const included = await filterRelevant({ 'a.py': bytes }, 'task', {
+        ...baseOpts, onBinary: 'include', callLlm,
+      });
+      assert.equal(calls, 0, label);
+      assert.equal(included.decisions[0].decision, 'yes', label);
+      assert.equal(included.decisions[0].skippedReason, 'binary', label);
+      assert.equal(included.files['a.py'], bytes, label);
+      assert.equal(included.files['a.py'] instanceof Uint8Array, true, label);
+
+      const excluded = await filterRelevant({ 'a.py': bytes }, 'task', {
+        ...baseOpts, onBinary: 'exclude', callLlm,
+      });
+      assert.equal(calls, 0, label);
+      assert.equal(excluded.decisions[0].decision, 'no', label);
+      assert.equal(excluded.decisions[0].skippedReason, 'binary', label);
+      assert.equal('a.py' in excluded.files, false, label);
+
+      let sent = '';
+      const opened = await filterRelevant({ 'a.py': bytes }, 'task', {
+        ...baseOpts,
+        onBinary: 'truncate',
+        retries: 0,
+        retryBaseMs: 0,
+        callLlm: async (req) => {
+          calls += 1;
+          sent = req.messages[1].content;
+          throw new Error('offline');
+        },
+      });
+      assert.equal(calls, 1, label);
+      assert.equal(opened.decisions[0].failedOpen, true, label);
+      assert.equal(opened.decisions[0].decision, 'yes', label);
+      assert.equal(opened.files['a.py'], bytes, label);
+      assert.equal(opened.files['a.py'] instanceof Uint8Array, true, label);
+      assert.match(sent, /\[binary file,/, label);
+      assert.equal(sent.includes(`File contents:\n${'a'.repeat(prefix)}`), false, label);
+    }
+  }
+
+  for (const lead of [0xc0, 0xc1, 0xf5, 0xff]) {
+    assert.equal(isBinaryContent(Uint8Array.from([0x61, lead])), true, lead.toString(16));
+  }
+  assert.equal(isBinaryContent(Uint8Array.from([0x61, 0xc3, 0x7f])), true);
+});
+
+test('an ignored binary file is excluded before any UTF-8 decode', async () => {
+  const Original = globalThis.TextDecoder;
+  let decodes = 0;
+  globalThis.TextDecoder = class SpyDecoder extends Original {
+    decode(...args) {
+      decodes += 1;
+      return super.decode(...args);
+    }
+  };
+  try {
+    const bytes = Uint8Array.from([0x61, 0xc3, 0xff, 0x00]);
+    const result = await filterRelevant(
+      { 'dist/app.min.js': bytes, 'src/keep.js': 'export const n = 1;\n' },
+      'task',
+      {
+        ...baseOpts,
+        callLlm: async () => response('yes'),
+      },
+    );
+    const ignored = result.decisions.find((decision) => decision.path === 'dist/app.min.js');
+    assert.equal(ignored.decision, 'no');
+    assert.equal(ignored.skippedReason, 'ignored');
+    assert.equal('dist/app.min.js' in result.files, false);
+    assert.equal(decodes, 0);
+    assert.equal(result.files['src/keep.js'], 'export const n = 1;\n');
+  } finally {
+    globalThis.TextDecoder = Original;
+  }
+});
+
 test('8192 ASCII + 0xff + TAIL is binary and included bytes stay original', async () => {
   const bytes = new Uint8Array(8192 + 1 + 4);
   bytes.fill(0x61, 0, 8192);

@@ -31,10 +31,15 @@ export function parseRelevanceAnswer(raw: unknown): {
 export function countTokens(text: string): number;
 /**
  * True when `content` looks like a binary file (NUL, invalid UTF-8, or a
- * dense run of non-text controls). The whole payload is validated. An
- * incomplete trailing sequence is tolerated only when it ends on the
- * 8192-byte probe boundary. Non-text values other than byte arrays are not
- * binary; {@link filterRelevant} rejects them when it coerces the file.
+ * dense run of non-text controls). The whole payload is validated. A tail
+ * is kept only when it is a truncated but still-legal UTF-8 character at
+ * the exact end of the sample (`0x61 0xC3` and `0x61 0xE0 0xA0` are `"a"`).
+ * A lead that cannot start a character, a continuation outside 80-BF, or a
+ * second byte outside its range (E0 is A0-BF, ED is 80-9F, F0 is 90-BF,
+ * F4 is 80-8F) is binary. A non-empty buffer that decodes to empty text is
+ * binary.
+ * Non-text values other than byte arrays are not binary;
+ * {@link filterRelevant} rejects them when it coerces the file.
  * @param {unknown} content
  * @returns {boolean}
  */
