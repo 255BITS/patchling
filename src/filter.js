@@ -1064,6 +1064,42 @@ async function cachePut(store, key, record) {
 }
 
 /**
+ * Snake_case option names, mapped to what to pass in JavaScript. Covers
+ * every keyword of patchling-py `filter_relevant(...)` (files, task, model,
+ * concurrency and cache share their names), plus snake_case spellings of
+ * JS-only options. Without this guard they are ignored silently.
+ */
+export const SNAKE_CASE_OPTIONS = Object.freeze({
+  api_key: 'use apiKey',
+  base_url: 'use baseUrl',
+  max_bytes: 'use maxBytes',
+  max_tokens: 'use maxTokens',
+  on_oversize: 'use onOversize',
+  on_binary: 'use onBinary',
+  max_output_tokens: 'use maxOutputTokens',
+  skip_patterns: 'use ignore (an array replaces DEFAULT_IGNORE_PATTERNS; [] or false classifies every path)',
+  max_attempts: 'use retries, which counts extra attempts: retries = max_attempts - 1',
+  retry_backoff: 'use retryBaseMs, in milliseconds: retryBaseMs = retry_backoff * 1000',
+  sleep: 'not supported in JS; backoff uses timers. In tests pass retryBaseMs: 0 to skip the waits',
+  call_llm: 'use callLlm',
+  on_decision: 'use onDecision',
+  reasoning_effort: 'use reasoningEffort',
+  retry_base_ms: 'use retryBaseMs',
+});
+
+/**
+ * Reject snake_case option names (the patchling-py spelling). Without this,
+ * `{ on_binary: 'include' }` is dropped and the default `exclude` applies.
+ * @param {object} opts
+ */
+function rejectSnakeCaseOptions(opts) {
+  const wrong = Object.keys(opts).filter((key) => Object.prototype.hasOwnProperty.call(SNAKE_CASE_OPTIONS, key));
+  if (!wrong.length) return;
+  const fixes = wrong.map((key) => `${key}: ${SNAKE_CASE_OPTIONS[key]}`).join('; ');
+  throw new TypeError(`filterRelevant options are camelCase in JavaScript. ${fixes}`);
+}
+
+/**
  * Ask a cheap model which files are relevant to `task`.
  *
  * `files` is a `{ path: content }` map (string or byte array). The returned
@@ -1107,8 +1143,10 @@ async function cachePut(store, key, record) {
  * @param {string} [opts.baseUrl] `GPTDIFF_LLM_BASE_URL` when omitted
  * @param {Function} [opts.callLlm] injectable client (tests)
  * @returns {Promise<FilterRelevantResult>}
+ * @throws {TypeError} when an option uses the Python snake_case name (`on_binary`, `max_bytes`, ...)
  */
 export async function filterRelevant(files, task, opts = {}) {
+  if (opts != null && typeof opts === 'object') rejectSnakeCaseOptions(opts);
   if (files == null || typeof files !== 'object' || Array.isArray(files)) {
     throw new TypeError('files must be an object of path -> content');
   }
