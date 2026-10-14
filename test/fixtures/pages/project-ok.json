@@ -1,0 +1,27 @@
+{
+  "success": true,
+  "errors": [],
+  "result": {
+    "name": "patchling",
+    "production_branch": "main",
+    "domains": ["patchling.pages.dev", "patchling.app"],
+    "source": {
+      "type": "github",
+      "config": {
+        "owner": "255BITS",
+        "repo_name": "patchling",
+        "production_branch": "main",
+        "production_deployments_enabled": true,
+        "preview_deployment_setting": "all",
+        "pr_comments_enabled": true,
+        "deployments_enabled": true
+      }
+    },
+    "build_config": { "build_command": "", "destination_dir": "landing", "root_dir": "" },
+    "canonical_deployment": {
+      "environment": "production",
+      "created_on": "2026-10-13T16:50:51.866675Z",
+      "deployment_trigger": { "metadata": { "branch": "main", "commit_hash": "58a3858827b2bb124541323baa2a1404dab9bb16" } }
+    }
+  }
+}
