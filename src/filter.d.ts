@@ -30,6 +30,14 @@ export function parseRelevanceAnswer(raw: unknown): {
  */
 export function countTokens(text: string): number;
 /**
+ * UTF-8 prefix cut on a code-point boundary. Never emits U+FFFD: a character
+ * that does not fit entirely inside `maxBytes` is dropped.
+ * @param {string} text
+ * @param {number} maxBytes
+ * @returns {string}
+ */
+export function truncateUtf8(text: string, maxBytes: number): string;
+/**
  * True when `content` looks like a binary file (NUL, invalid UTF-8, or a
  * dense run of non-text controls). The whole payload is validated. A tail
  * is kept only when it is a truncated but still-legal UTF-8 character at
