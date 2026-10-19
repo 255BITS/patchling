@@ -5,7 +5,7 @@
  * smartapply and their building blocks.
  */
 
-export { generateDiff, smartapply, buildEnvironment, callLlmForDiff, callLlmForApply, callLlmForApplyWithThink } from './gptdiff.js';
+export { generateDiff, smartapply, buildEnvironment, callLlmForDiff, callLlmForApply, callLlmForApplyWithThink, SmartApplyError } from './gptdiff.js';
 export {
   filterRelevant,
   RelevanceCache,

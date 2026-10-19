@@ -176,6 +176,8 @@ export function callLlmForApplyWithThink(filePath: string, originalContent: stri
  *   by the deterministic fast path emit no tokens (no LLM call is made).
  * @param {Function} [opts.callLlmForApply] injectable single-file applier
  * @returns {Promise<Record<string, string>>}
+ * @throws {SmartApplyError} when a model rewrite is refused (see above).
+ *   Provider and network errors propagate unchanged.
  */
 export function smartapply(diffText: string, files: Record<string, string>, opts?: {
     model?: string;
@@ -186,3 +188,14 @@ export function smartapply(diffText: string, files: Record<string, string>, opts
     onToken?: (text: string, path: string) => void;
     callLlmForApply?: Function;
 }): Promise<Record<string, string>>;
+/**
+ * Thrown by {@link smartapply} when it refuses to write a file: the model's
+ * rewrite changed lines the diff did not add or remove, and the edit could
+ * not be replayed from the diff's `+`/`-` lines without guessing. Mirrors
+ * `SmartApplyError` in the Python package. Provider and network failures are
+ * not wrapped; they propagate as the original error.
+ */
+export class SmartApplyError extends Error {
+    /** @param {string} message */
+    constructor(message: string);
+}
