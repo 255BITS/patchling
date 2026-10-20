@@ -525,7 +525,7 @@ function truncateText(text, maxBytes, maxTokens) {
  * @param {number} maxBytes
  * @returns {string}
  */
-function truncateUtf8(text, maxBytes) {
+export function truncateUtf8(text, maxBytes) {
   const bytes = new TextEncoder().encode(text);
   if (bytes.length <= maxBytes || maxBytes <= 0) return maxBytes <= 0 ? '' : text;
   let end = maxBytes;
