@@ -32,17 +32,28 @@ for (const [name, sha256] of Object.entries(FIXTURE_SHA256)) {
   });
 }
 
+// Same construction as patchling-py test_parity_binary_cut_fixtures:
+// fill * (length - len(tail)) + tail, so `length` is the total size and the
+// tail sits at the very end of that window.
 function binaryCaseBytes(c) {
   if (c.hex !== undefined) return new Uint8Array(Buffer.from(c.hex, 'hex'));
-  const pad = Buffer.alloc(c.length, c.fill, 'utf8');
-  return new Uint8Array(Buffer.concat([pad, Buffer.from(c.tail_hex, 'hex')]));
+  const tail = Buffer.from(c.tail_hex, 'hex');
+  const fill = Buffer.from(c.fill ?? 'a', 'ascii');
+  assert.equal(fill.length, 1, `${c.id}: fill must be one ASCII byte`);
+  assert.ok(tail.length <= c.length, `${c.id}: tail longer than length`);
+  const pad = Buffer.alloc(c.length - tail.length, fill);
+  const bytes = Buffer.concat([pad, tail]);
+  assert.equal(bytes.length, c.length, `${c.id}: sample must be exactly ${c.length} bytes`);
+  return new Uint8Array(bytes);
 }
 
 test('binary.json: every case matches isBinaryContent', () => {
   const { cases } = fixtures['binary.json'].data;
   assert.ok(cases.length > 0);
   for (const c of cases) {
-    assert.equal(isBinaryContent(binaryCaseBytes(c)), c.expect_binary, c.id);
+    const sample = binaryCaseBytes(c);
+    if (c.length !== undefined) assert.equal(sample.length, 8192, `${c.id}: windowed cases are 8192 bytes`);
+    assert.equal(isBinaryContent(sample), c.expect_binary, c.id);
   }
 });
 
