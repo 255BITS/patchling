@@ -26,6 +26,21 @@ import {
 } from './llm.js';
 import { getEnv, DEFAULT_MODEL } from './env.js';
 
+/**
+ * Thrown by {@link smartapply} when it refuses to write a file: the model's
+ * rewrite changed lines the diff did not add or remove, and the edit could
+ * not be replayed from the diff's `+`/`-` lines without guessing. Mirrors
+ * `SmartApplyError` in the Python package. Provider and network failures are
+ * not wrapped; they propagate as the original error.
+ */
+export class SmartApplyError extends Error {
+  /** @param {string} message */
+  constructor(message) {
+    super(message);
+    this.name = 'SmartApplyError';
+  }
+}
+
 const DIFF_TOOL_PROMPT = `Save the calculated diff as used in 'git apply'. Should include the file and line number. For example:
 \`\`\`diff
 a/file.py b/file.py
@@ -360,6 +375,8 @@ export async function callLlmForApplyWithThink(filePath, originalContent, fileDi
  *   by the deterministic fast path emit no tokens (no LLM call is made).
  * @param {Function} [opts.callLlmForApply] injectable single-file applier
  * @returns {Promise<Record<string, string>>}
+ * @throws {SmartApplyError} when a model rewrite is refused (see above).
+ *   Provider and network errors propagate unchanged.
  */
 export async function smartapply(diffText, files, opts = {}) {
   const model = resolveModel(opts.model);
@@ -408,7 +425,7 @@ export async function smartapply(diffText, files, opts = {}) {
       // add or remove. Replay only the +/- lines, or refuse the write.
       const intent = applyIntentIgnoringBadContext(original, patch);
       if (intent == null || diffOutputViolatesIntent(original, intent, patch)) {
-        throw new Error(
+        throw new SmartApplyError(
           `smartapply: refusing to write ${JSON.stringify(path)}: the model changed lines the diff did not add or remove`,
         );
       }

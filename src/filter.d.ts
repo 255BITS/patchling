@@ -102,6 +102,7 @@ export function isIgnoredPath(filePath: string, patterns?: string[]): boolean;
  * @param {string} [opts.baseUrl] `GPTDIFF_LLM_BASE_URL` when omitted
  * @param {Function} [opts.callLlm] injectable client (tests)
  * @returns {Promise<FilterRelevantResult>}
+ * @throws {TypeError} when an option uses the Python snake_case name (`on_binary`, `max_bytes`, ...)
  */
 export function filterRelevant(files: Record<string, string | Uint8Array>, task: string, opts?: {
     model?: string;
@@ -293,6 +294,29 @@ export class RelevanceCache {
     /** @returns {Promise<void>} */
     _load(): Promise<void>;
 }
+/**
+ * Snake_case option names, mapped to what to pass in JavaScript. Covers
+ * every keyword of patchling-py `filter_relevant(...)` (files, task, model,
+ * concurrency and cache share their names), plus snake_case spellings of
+ * JS-only options. Without this guard they are ignored silently.
+ */
+export const SNAKE_CASE_OPTIONS: Readonly<{
+    api_key: "use apiKey";
+    base_url: "use baseUrl";
+    max_bytes: "use maxBytes";
+    max_tokens: "use maxTokens";
+    on_oversize: "use onOversize";
+    on_binary: "use onBinary";
+    max_output_tokens: "use maxOutputTokens";
+    skip_patterns: "use ignore (an array replaces DEFAULT_IGNORE_PATTERNS; [] or false classifies every path)";
+    max_attempts: "use retries, which counts extra attempts: retries = max_attempts - 1";
+    retry_backoff: "use retryBaseMs, in milliseconds: retryBaseMs = retry_backoff * 1000";
+    sleep: "not supported in JS; backoff uses timers. In tests pass retryBaseMs: 0 to skip the waits";
+    call_llm: "use callLlm";
+    on_decision: "use onDecision";
+    reasoning_effort: "use reasoningEffort";
+    retry_base_ms: "use retryBaseMs";
+}>;
 export type RelevanceDecision = {
     path: string;
     /**
