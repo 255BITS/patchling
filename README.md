@@ -71,7 +71,7 @@ Configuration comes from environment variables (Node) or `setEnv(...)` overrides
 | --- | --- | --- |
 | `GPTDIFF_LLM_API_KEY` | NanoGPT API key (`sk-nano-…`) | — (required for live calls) |
 | `GPTDIFF_LLM_BASE_URL` | OpenAI-compatible base URL | `https://nano-gpt.com/api/v1/` |
-| `GPTDIFF_MODEL` | Model id | `xiaomi/mimo-v2.5-pro-ultraspeed` |
+| `GPTDIFF_MODEL` | Model id | `xiaomi/mimo-v2.6-pro` |
 | `GPTDIFF_FILTER_MODEL` | Cheap model for `filterRelevant` | `xiaomi/mimo-v2.6-flash` |
 
 ```js

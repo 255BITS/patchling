@@ -36,5 +36,5 @@ export function getEnv(name, fallback = undefined) {
   return fallback;
 }
 
-export const DEFAULT_MODEL = 'xiaomi/mimo-v2.5-pro-ultraspeed';
+export const DEFAULT_MODEL = 'xiaomi/mimo-v2.6-pro';
 export const DEFAULT_BASE_URL = 'https://nano-gpt.com/api/v1/';
