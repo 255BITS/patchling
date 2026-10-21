@@ -12,5 +12,5 @@ export function setEnv(name: string, value: string | undefined): void;
  * @returns {string | undefined}
  */
 export function getEnv(name: string, fallback?: string): string | undefined;
-export const DEFAULT_MODEL: "xiaomi/mimo-v2.6-pro";
+export const DEFAULT_MODEL: "deepseek/deepseek-v4.1-flash-1017";
 export const DEFAULT_BASE_URL: "https://nano-gpt.com/api/v1/";

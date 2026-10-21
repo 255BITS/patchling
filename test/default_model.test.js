@@ -7,8 +7,8 @@ import { DEFAULT_MODEL as LANDING_DEFAULT_MODEL } from '../landing/lib/env.js';
 const RETIRED = 'xiaomi/mimo-v2.5-pro-ultraspeed'; // NanoGPT returns HTTP 410
 const catalog = JSON.parse(readFileSync(new URL('./fixtures/demo-models.json', import.meta.url), 'utf8'));
 
-test('DEFAULT_MODEL is xiaomi/mimo-v2.6-pro', () => {
-  assert.equal(DEFAULT_MODEL, 'xiaomi/mimo-v2.6-pro');
+test('DEFAULT_MODEL is deepseek/deepseek-v4.1-flash-1017', () => {
+  assert.equal(DEFAULT_MODEL, 'deepseek/deepseek-v4.1-flash-1017');
   assert.equal(LANDING_DEFAULT_MODEL, DEFAULT_MODEL);
 });
 
@@ -25,6 +25,6 @@ test('DEFAULT_MODEL is in the verified NanoGPT catalog fixture and cheap', () =>
 
 test('src/env.d.ts declares the new default literal', () => {
   const dts = readFileSync(new URL('../src/env.d.ts', import.meta.url), 'utf8');
-  assert.match(dts, /DEFAULT_MODEL: "xiaomi\/mimo-v2\.6-pro";/);
+  assert.match(dts, /DEFAULT_MODEL: "deepseek\/deepseek-v4\.1-flash-1017";/);
   assert.ok(!dts.includes(RETIRED));
 });
