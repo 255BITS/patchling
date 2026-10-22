@@ -1,10 +1,10 @@
 {
-  "verifiedOn": "2026-10-13",
+  "verifiedOn": "2026-10-21",
   "sources": {
     "text": "https://nano-gpt.com/api/v1/models?detailed=true"
   },
   "catalogSha256": {
-    "nanogpt-models.json": "0ff41c8e54be2645c386bd00a712dca92e8b9103468ea28a0fd0a7e12c2aa89e"
+    "nanogpt-models.json": "e4a5241a0498b8d0db13d8bb667aaafa1d3d2b162a49d917de2412f66b634f7a"
   },
   "text": {
     "z-ai/glm-5.3-flash": {
@@ -122,6 +122,45 @@
         "completion": 0.87,
         "cacheReadInputPer1kTokens": 3.6e-06,
         "cacheWriteInputPer1kTokens": 0,
+        "currency": "USD",
+        "unit": "per_million_tokens"
+      }
+    },
+    "deepseek/deepseek-v4.1-flash-1017": {
+      "created": 1792195200,
+      "context_length": 1048576,
+      "max_output_tokens": 393216,
+      "architecture": {
+        "modality": "text+image->text",
+        "input_modalities": [
+          "text",
+          "image"
+        ],
+        "output_modalities": [
+          "text"
+        ]
+      },
+      "capabilities": {
+        "vision": true,
+        "video_input": false,
+        "audio_input": false,
+        "reasoning": true,
+        "tool_calling": true,
+        "parallel_tool_calls": false,
+        "structured_output": false,
+        "pdf_upload": false,
+        "batch_api": true
+      },
+      "reasoning_efforts": [
+        "none",
+        "low",
+        "high",
+        "max"
+      ],
+      "pricing": {
+        "prompt": 0.09999999999999999,
+        "completion": 0.6,
+        "cacheReadInputPer1kTokens": 3e-06,
         "currency": "USD",
         "unit": "per_million_tokens"
       }
