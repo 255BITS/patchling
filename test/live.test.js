@@ -5,7 +5,7 @@
  *   GPTDIFF_LIVE=1
  *   GPTDIFF_LLM_API_KEY=<your NanoGPT key>   (e.g. sk-nano-... from OAuth sign-in)
  *
- * Model defaults to xiaomi/mimo-v2.5-pro-ultraspeed (override with GPTDIFF_MODEL).
+ * Model defaults to deepseek/deepseek-v4.1-flash-1017 (override with GPTDIFF_MODEL).
  * Base URL defaults to https://nano-gpt.com/api/v1/ (override GPTDIFF_LLM_BASE_URL).
  *
  * Run with:  npm run test:live

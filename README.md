@@ -59,7 +59,7 @@ The browser demos explicitly use `xiaomi/mimo-v2.6-flash` for diff generation
 and repair. The landing-page picker also pins `xiaomi/mimo-v2.6-pro` and
 `z-ai/glm-5.3-flash`. These IDs, capabilities, and prices were checked against
 [NanoGPT's public catalog](https://nano-gpt.com/api/v1/models?detailed=true)
-on 2026-10-13; the offline snapshot is in `test/fixtures/demo-models.json`.
+on 2026-10-13 (re-checked 2026-10-21, when the default `deepseek/deepseek-v4.1-flash-1017` was added); the offline snapshot is in `test/fixtures/demo-models.json`.
 The decision demo requests MiMo's supported `none` reasoning effort.
 Library environment defaults below are independent of the demo choices.
 
@@ -71,7 +71,7 @@ Configuration comes from environment variables (Node) or `setEnv(...)` overrides
 | --- | --- | --- |
 | `GPTDIFF_LLM_API_KEY` | NanoGPT API key (`sk-nano-…`) | — (required for live calls) |
 | `GPTDIFF_LLM_BASE_URL` | OpenAI-compatible base URL | `https://nano-gpt.com/api/v1/` |
-| `GPTDIFF_MODEL` | Model id | `xiaomi/mimo-v2.5-pro-ultraspeed` |
+| `GPTDIFF_MODEL` | Model id | `deepseek/deepseek-v4.1-flash-1017` |
 | `GPTDIFF_FILTER_MODEL` | Cheap model for `filterRelevant` | `xiaomi/mimo-v2.6-flash` |
 
 ```js
