@@ -16,8 +16,8 @@ export const EXPECTED = Object.freeze({
   productionDeploymentsEnabled: true,
   previewDeploymentSetting: 'all',
   prCommentsEnabled: true,
-  buildCommand: '',
-  destinationDir: 'landing',
+  buildCommand: 'bash scripts/build-site.sh',
+  destinationDir: 'dist',
   rootDir: '',
   domains: Object.freeze(['patchling.app', 'patchling.pages.dev']),
 });

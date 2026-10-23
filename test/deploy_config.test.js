@@ -1,5 +1,6 @@
 /**
- * Cloudflare Pages serves landing/ as-is (no build step, see docs/deploy.md).
+ * Cloudflare Pages runs scripts/build-site.sh and serves dist/: landing/ at /,
+ * patchling-py docs at /py/, this repo's docs at /js/ (see docs/deploy.md).
  * These are the deploy assumptions CI can verify from the repo alone.
  */
 import { test } from 'node:test';
@@ -28,10 +29,10 @@ test('landing/index.html is the Pages entry point', () => {
   assert.ok(existsSync(join(landing, 'index.html')));
 });
 
-test('docs/deploy.md pins production branch main and output dir landing', () => {
+test('docs/deploy.md pins production branch main and output dir dist', () => {
   const doc = readFileSync(join(root, 'docs', 'deploy.md'), 'utf8');
   assert.match(doc, /Production branch \| `main`/);
-  assert.match(doc, /Build output directory \| `landing`/);
+  assert.match(doc, /Build output directory \| `dist`/);
 });
 
 test('every relative import under landing/ resolves inside landing/', () => {
@@ -47,4 +48,30 @@ test('every relative import under landing/ resolves inside landing/', () => {
     }
   }
   assert.deepEqual(problems, []);
+});
+
+test('landing links the in-site docs, and /py/ and /js/ are left to the build', () => {
+  const html = readFileSync(join(landing, 'index.html'), 'utf8');
+  assert.match(html, /href="\/py\/"/);
+  assert.match(html, /href="\/js\/"/);
+  assert.doesNotMatch(html, /255bits\.github\.io\/patchling-py/);
+  for (const dir of ['py', 'js', 'docs']) {
+    assert.ok(!existsSync(join(landing, dir)), `landing/${dir} would collide with the build output`);
+  }
+});
+
+test('/docs/ redirects to /py/ and the build script wires everything up', () => {
+  const redirects = readFileSync(join(root, 'scripts', 'site', '_redirects'), 'utf8');
+  assert.match(redirects, /^\/docs\/\* \/py\/:splat 301$/m);
+  assert.match(redirects, /^\/docs \/py\/ 301$/m);
+  const sh = readFileSync(join(root, 'scripts', 'build-site.sh'), 'utf8');
+  assert.match(sh, /https:\/\/github\.com\/255BITS\/patchling-py\.git/);
+  assert.match(sh, /-d "\$out\/py"/);
+  assert.match(sh, /-d "\$out\/js"/);
+});
+
+test('site build tooling stays out of the npm package', () => {
+  const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  assert.deepEqual(pkg.files, ['src']);
+  assert.equal(pkg.dependencies, undefined);
 });
