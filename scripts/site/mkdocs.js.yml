@@ -1,0 +1,27 @@
+# Rendered by scripts/build-site.sh into dist/js/ (patchling.app/js/).
+site_name: patchling (JavaScript)
+site_url: https://patchling.app/js/
+repo_url: https://github.com/255BITS/patchling
+edit_uri: ""
+docs_dir: docs
+strict: true
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: deep purple
+    accent: blue
+nav:
+  - README: index.md
+  - Changelog: CHANGELOG.md
+  - Deploying patchling.app: deploy.md
+extra:
+  social:
+    - name: Python docs
+      icon: fontawesome/brands/python
+      link: https://patchling.app/py/
+    - name: patchling.app
+      icon: fontawesome/solid/globe
+      link: https://patchling.app/
+plugins:
+  - search
