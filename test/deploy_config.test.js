@@ -70,6 +70,15 @@ test('/docs/ redirects to /py/ and the build script wires everything up', () => 
   assert.match(sh, /-d "\$out\/js"/);
 });
 
+test('every site build records both repos\' commit SHAs', () => {
+  const sh = readFileSync(join(root, 'scripts', 'build-site.sh'), 'utf8');
+  assert.match(sh, /PATCHLING_PY_REF:-main/);
+  assert.match(sh, /\$out\/build-info\.json/);
+  assert.match(sh, /"patchling":.*"commit": "\$self_sha"/);
+  assert.match(sh, /"patchling_py":.*"commit": "\$py_sha"/);
+  assert.match(sh, /echo "patchling-py commit: \$py_sha/);
+});
+
 test('site build tooling stays out of the npm package', () => {
   const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   assert.deepEqual(pkg.files, ['src']);
