@@ -151,6 +151,130 @@ const SYSTEM_PROMPT = (
  * @property {string} [cache_key]
  */
 
+/** @typedef {{ version: number, hostname: string, pid_scope: string | null, pid: number, token: string, ticket: number }} CacheClaim */
+
+const CACHE_LOCK_WAIT_MS = 2000;
+const CACHE_LOCK_POLL_MS = 10;
+
+/** @param {unknown} value @param {string} name @returns {value is CacheClaim} */
+function validCacheClaim(value, name) {
+  if (!value || typeof value !== 'object') return false;
+  const v = /** @type {CacheClaim} */ (value);
+  return v.version === 1 && typeof v.hostname === 'string' && v.hostname.length > 0
+    && (v.pid_scope === null || (typeof v.pid_scope === 'string' && v.pid_scope.length > 0))
+    && Number.isSafeInteger(v.pid) && v.pid > 0
+    && Number.isSafeInteger(v.ticket) && v.ticket >= 0
+    && typeof v.token === 'string' && /^[a-f0-9]{32}$/.test(v.token)
+    && name === `${v.token}.json`;
+}
+
+/** True only when this process can prove the local owner no longer exists. */
+function deadCacheOwner(claim, owner) {
+  // Restrict automatic recovery to POSIX process probes. In particular, the
+  // shared protocol must never treat a Windows signal call as a harmless probe.
+  if (!['aix', 'android', 'darwin', 'freebsd', 'linux', 'openbsd', 'sunos'].includes(process.platform)) return false;
+  if (claim.hostname !== owner.hostname || !owner.pid_scope || claim.pid_scope !== owner.pid_scope) return false;
+  try {
+    process.kill(claim.pid, 0);
+    return false;
+  } catch (err) {
+    return err && err.code === 'ESRCH'; // EPERM/unknown is not evidence of death.
+  }
+}
+
+/** Read atomically published contenders; remove only uniquely named, dead owners. */
+async function cacheClaims(fs, lockDir, owner) {
+  const claims = [];
+  let unknown = false;
+  for (const name of await fs.readdir(lockDir)) {
+    if (/^\.[a-f0-9]{32}\.tmp$/.test(name)) continue;
+    const path = `${lockDir}/${name}`;
+    let claim;
+    try {
+      claim = JSON.parse(await fs.readFile(path, 'utf8'));
+    } catch (err) {
+      if (!err || err.code !== 'ENOENT') unknown = true;
+      continue;
+    }
+    if (!validCacheClaim(claim, name)) { unknown = true; continue; }
+    if (claim.token !== owner.token && deadCacheOwner(claim, owner)) {
+      // A token is never reused. Concurrent reapers can remove this exact name
+      // without unlinking a replacement owner's lock (the stale-lock ABA race).
+      await fs.unlink(path).catch((err) => { if (err.code !== 'ENOENT') throw err; });
+      continue;
+    }
+    claims.push(claim);
+  }
+  return { claims, unknown };
+}
+
+/**
+ * Shared JS/Python local-filesystem bakery lock. Claims first announce choosing
+ * (ticket 0), then take max(ticket)+1 and wait for earlier (ticket, token) pairs.
+ * The directory stays in place; no writer ever deletes another live claim.
+ */
+async function withCacheWriteLock(fs, pathMod, target, write) {
+  const os = await import('node:os');
+  const crypto = await import('node:crypto');
+  const lockDir = `${target}.lock`;
+  await fs.mkdir(lockDir, { recursive: true });
+  /** @type {string | null} */
+  let scope = process.platform;
+  if (process.platform === 'linux') {
+    scope = await fs.readlink('/proc/self/ns/pid').then((v) => `linux:${v}`, () => null);
+  }
+  /** @type {CacheClaim} */
+  const owner = { version: 1, hostname: os.hostname(), pid_scope: scope,
+    pid: process.pid, token: crypto.randomBytes(16).toString('hex'), ticket: 0 };
+  const claimPath = pathMod.join(lockDir, `${owner.token}.json`);
+  const tmp = pathMod.join(lockDir, `.${owner.token}.tmp`);
+  const publish = async () => {
+    try {
+      await fs.writeFile(tmp, JSON.stringify(owner), { encoding: 'utf8', flag: 'wx' });
+      await fs.rename(tmp, claimPath);
+    } finally { await fs.unlink(tmp).catch(() => {}); }
+  };
+  const deadline = performance.now() + CACHE_LOCK_WAIT_MS;
+  const wait = async () => {
+    if (performance.now() >= deadline) throw new Error(`Timed out waiting for relevance cache lock: ${target}`);
+    await new Promise((resolve) => setTimeout(resolve, CACHE_LOCK_POLL_MS));
+  };
+  try {
+    await publish();
+    for (;;) {
+      const state = await cacheClaims(fs, lockDir, owner);
+      if (state.unknown) { await wait(); continue; }
+      const max = state.claims.reduce((n, c) => Math.max(n, c.ticket), 0);
+      if (max >= Number.MAX_SAFE_INTEGER) throw new Error('Relevance cache lock ticket exhausted');
+      owner.ticket = max + 1;
+      await publish();
+      break;
+    }
+    for (;;) {
+      const state = await cacheClaims(fs, lockDir, owner);
+      if (!state.claims.some((c) => c.token === owner.token && c.ticket === owner.ticket)) {
+        throw new Error('Relevance cache lock claim was removed');
+      }
+      const earlier = state.claims.some((c) => c.token !== owner.token
+        && (c.ticket === 0 || c.ticket < owner.ticket || (c.ticket === owner.ticket && c.token < owner.token)));
+      if (!state.unknown && !earlier) return await write();
+      await wait();
+    }
+  } finally { await fs.unlink(claimPath).catch(() => {}); }
+}
+
+/** Read the latest committed entries; corrupt/missing JSON remains a cache miss. */
+async function cacheEntriesOnDisk(fs, path) {
+  let text;
+  try { text = await fs.readFile(path, 'utf8'); }
+  catch (err) { if (err.code === 'ENOENT') return Object.create(null); throw err; }
+  let payload;
+  try { payload = JSON.parse(text); } catch { return Object.create(null); }
+  const entries = payload && typeof payload === 'object' ? payload.entries : null;
+  return entries && typeof entries === 'object' && !Array.isArray(entries)
+    ? Object.assign(Object.create(null), entries) : Object.create(null);
+}
+
 /**
  * In-memory relevance cache with an optional on-disk JSON file.
  *
@@ -172,6 +296,10 @@ export class RelevanceCache {
     this._entries = Object.create(null);
     /** @type {Promise<void> | null} */
     this._loadPromise = null;
+    /** @type {Map<string, RelevanceCacheRecord>} */
+    this._dirty = new Map();
+    /** @type {Promise<void>} */
+    this._flushPromise = Promise.resolve();
   }
 
   /**
@@ -232,7 +360,9 @@ export class RelevanceCache {
    */
   async put(key, record) {
     await this.load();
-    this._entries[key] = { ...record };
+    const value = { ...record };
+    this._entries[key] = value;
+    this._dirty.set(String(key), value);
   }
 
   /**
@@ -245,26 +375,41 @@ export class RelevanceCache {
     await this.put(key, record);
   }
 
-  /** Write `{ version: 1, entries }` atomically. No-op without a path. */
+  /** Merge this writer's dirty entries into the latest version-1 JSON atomically. */
   async flush() {
     if (!this.path) return;
+    // Serialize this instance too: an older snapshot must never follow a newer one.
+    const pending = this._flushPromise.catch(() => {}).then(() => this._flush());
+    this._flushPromise = pending;
+    return pending;
+  }
+
+  /** @returns {Promise<void>} */
+  async _flush() {
     await this.load();
+    if (!this._dirty.size) return;
+    const dirty = new Map(this._dirty);
     const fs = await import('node:fs/promises');
     const pathMod = await import('node:path');
-    const dir = pathMod.dirname(pathMod.resolve(this.path));
+    const target = pathMod.resolve(this.path);
+    const dir = pathMod.dirname(target);
     await fs.mkdir(dir, { recursive: true });
-    const tmp = pathMod.join(
-      dir,
-      `.relevance-cache-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`,
-    );
-    const payload = JSON.stringify({ version: 1, entries: this._entries });
-    try {
-      await fs.writeFile(tmp, payload, 'utf8');
-      await fs.rename(tmp, this.path);
-    } catch (err) {
-      await fs.unlink(tmp).catch(() => {});
-      throw err;
-    }
+    await withCacheWriteLock(fs, pathMod, target, async () => {
+      const entries = await cacheEntriesOnDisk(fs, target);
+      for (const [key, record] of dirty) entries[key] = record;
+      const tmp = pathMod.join(dir,
+        `.relevance-cache-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.tmp`);
+      try {
+        await fs.writeFile(tmp, JSON.stringify({ version: 1, entries }), { encoding: 'utf8', flag: 'wx' });
+        await fs.rename(tmp, target);
+      } finally { await fs.unlink(tmp).catch(() => {}); }
+      for (const [key, record] of dirty) {
+        if (this._dirty.get(key) === record) this._dirty.delete(key);
+      }
+      this._entries = entries;
+      // A put during asynchronous I/O remains dirty and visible for the next flush.
+      for (const [key, record] of this._dirty) this._entries[key] = record;
+    });
   }
 
   /** @returns {Promise<void>} */

@@ -44,7 +44,7 @@ test('landing picker retains creation dates and ranks the newer flagship first',
     DEFAULT_MODEL: defaults.DEFAULT_MODEL, MODEL: defaults.DEFAULT_MODEL,
     localStorage: { setItem() {} }, $: () => ({}), getKey: () => null,
     renderFilterModelRow() {},
-    fetch: async () => ({ json: async () => ({ data: [
+    fetch: async () => ({ ok: true, json: async () => ({ data: [
       { id: 'google/gemini-3-pro', created: 20 },
       { id: 'google/gemini-2-pro', created: 10 },
     ] }) }),

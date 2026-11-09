@@ -170,53 +170,6 @@ export const FILTER_PROMPT_VERSION: 3;
  */
 export const DEFAULT_IGNORE_PATTERNS: string[];
 /**
- * @typedef {object} RelevanceDecision
- * @property {string} path
- * @property {'yes' | 'no'} decision `yes` files go on to generateDiff.
- *   Ambiguous answers and errors are `yes`.
- * @property {string} reason short explanation; the cleaned model text when a call was made
- * @property {string | null} raw model text before parsing, or null when no call was made
- * @property {number} tokens total tokens for the call; 0 when no call was made
- * @property {number} promptTokens
- * @property {number} completionTokens
- * @property {boolean} cached true when this judgment was reused (a cache hit, or a later path in a shared request)
- * @property {'binary' | 'oversize' | 'truncated' | 'ignored' | null} skippedReason
- *   set when the file was not sent in full. `ignored` is a lockfile or generated path.
- * @property {string | null} error set when the call threw or the answer was empty;
- *   the file is still included
- * @property {boolean} failedOpen true when the file was included without a
- *   definitive yes/no (empty, malformed, thrown, or a cache failure that
- *   blocked a decision)
- */
-/**
- * @typedef {object} FilterRelevantResult
- * @property {Record<string, string | Uint8Array>} files `yes` files in input order.
- *   Valid UTF-8 bytes are decoded to text, keeping a leading BOM. A binary
- *   file kept by policy is the original value, bytes untouched.
- * @property {RelevanceDecision[]} decisions one per input file, in input order
- * @property {string} model
- * @property {RelevanceDecision[]} errors decisions whose call threw
- * @property {number} billedTokens sum of `tokens` on decisions that were not cache hits
- * @property {number} billedPromptTokens
- * @property {number} billedCompletionTokens
- * @property {number} failedOpen files included because the call failed, the answer
- *   was empty, or the answer was ambiguous
- */
-/**
- * Record stored in a cache. Snake_case so a JSON file matches the Python cache.
- * @typedef {object} RelevanceCacheRecord
- * @property {'yes' | 'no'} decision
- * @property {string} [reason]
- * @property {string | null} [raw]
- * @property {number} [tokens]
- * @property {number} [prompt_tokens]
- * @property {number} [completion_tokens]
- * @property {'binary' | 'oversize' | 'truncated' | null} [skipped_reason]
- * @property {string | null} [error]
- * @property {boolean} [failed_open]
- * @property {string} [cache_key]
- */
-/**
  * In-memory relevance cache with an optional on-disk JSON file.
  *
  * The key is the SHA-256 of the exact classification inputs, length-prefixed
@@ -269,6 +222,10 @@ export class RelevanceCache {
     _entries: Record<string, RelevanceCacheRecord>;
     /** @type {Promise<void> | null} */
     _loadPromise: Promise<void> | null;
+    /** @type {Map<string, RelevanceCacheRecord>} */
+    _dirty: Map<string, RelevanceCacheRecord>;
+    /** @type {Promise<void>} */
+    _flushPromise: Promise<void>;
     /**
      * @param {string} key
      * @returns {Promise<RelevanceCacheRecord | undefined>}
@@ -287,8 +244,10 @@ export class RelevanceCache {
      * @returns {Promise<void>}
      */
     set(key: string, record: RelevanceCacheRecord): Promise<void>;
-    /** Write `{ version: 1, entries }` atomically. No-op without a path. */
+    /** Merge this writer's dirty entries into the latest version-1 JSON atomically. */
     flush(): Promise<void>;
+    /** @returns {Promise<void>} */
+    _flush(): Promise<void>;
     /** @returns {Promise<void>} */
     load(): Promise<void>;
     /** @returns {Promise<void>} */
@@ -400,4 +359,12 @@ export type RelevanceCacheRecord = {
     error?: string | null;
     failed_open?: boolean;
     cache_key?: string;
+};
+export type CacheClaim = {
+    version: number;
+    hostname: string;
+    pid_scope: string | null;
+    pid: number;
+    token: string;
+    ticket: number;
 };

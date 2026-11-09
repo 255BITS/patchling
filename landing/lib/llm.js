@@ -80,6 +80,7 @@ async function consumeSseStream(resp, onToken) {
   let content = '';
   let usage = null;
   let dataLines = [];
+  let finishReason = null;
 
   // Dispatch one SSE event; returns true when the [DONE] sentinel is seen.
   const dispatch = () => {
@@ -95,6 +96,11 @@ async function consumeSseStream(resp, onToken) {
     }
     if (json.error) {
       throw new Error(`LLM API error (stream): ${JSON.stringify(json.error)}`);
+    }
+    const reason = json.choices?.[0]?.finish_reason;
+    if (reason != null) {
+      rejectIncompleteReason(reason);
+      finishReason = reason;
     }
     const text = json.choices?.[0]?.delta?.content;
     if (typeof text === 'string' && text.length) {
@@ -117,26 +123,48 @@ async function consumeSseStream(resp, onToken) {
   };
 
   let finished = false;
-  while (!finished) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 1);
-      if (handleLine(line)) {
-        finished = true;
-        break;
+  try {
+    while (!finished) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 1);
+        if (handleLine(line)) {
+          finished = true;
+          break;
+        }
       }
     }
+    // A final event need not have a trailing blank line. EOF by itself is
+    // not successful completion: a proxy can close after a usable diff prefix.
+    buffer += decoder.decode();
+    if (!finished && buffer) finished = handleLine(buffer);
+    if (!finished) finished = dispatch();
+    if (!finished && !['stop', 'tool_calls', 'function_call'].includes(finishReason)) {
+      throw incompleteCompletion('LLM stream ended before a terminal completion event.');
+    }
+    return { choices: [{ message: { content } }], usage };
+  } finally {
+    // Also clean up after [DONE], a provider error, an abort, or a throwing
+    // onToken callback. Transport cancellation must not delay the result/error.
+    try { if (typeof reader.cancel === 'function') Promise.resolve(reader.cancel()).catch(() => {}); } catch { /* preserve the original result/error */ }
+    try { if (typeof reader.releaseLock === 'function') reader.releaseLock(); } catch { /* already released */ }
   }
-  // Flush any trailing bytes / final event lacking a terminating blank line.
-  buffer += decoder.decode();
-  if (!finished && buffer) handleLine(buffer);
-  if (!finished) dispatch();
+}
 
-  return { choices: [{ message: { content } }], usage };
+function incompleteCompletion(message) {
+  const error = new Error(message);
+  error.name = 'IncompleteCompletionError';
+  return error;
+}
+
+function rejectIncompleteReason(reason) {
+  if (reason === 'length' || reason === 'content_filter') {
+    throw incompleteCompletion(`LLM completion was incomplete (finish_reason: ${reason}).`);
+  }
 }
 
 /**
@@ -274,6 +302,7 @@ export async function callLlm({
   if (json.error) {
     throw new Error(`LLM API error from ${domainForUrl(url)}: ${JSON.stringify(json.error)}`);
   }
+  rejectIncompleteReason(json.choices?.[0]?.finish_reason);
   return json;
 }
 

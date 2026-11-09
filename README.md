@@ -63,6 +63,22 @@ on 2026-10-13 (re-checked 2026-10-21, when the default `deepseek/deepseek-v4.1-f
 The decision demo requests MiMo's supported `none` reasoning effort.
 Library environment defaults below are independent of the demo choices.
 
+The homepage snapshots its mode and models for each run; changes made while it
+is working apply to the next run. Model catalogs retry after temporary failures
+and reload when the saved credential changes.
+
+OpenAI-compatible streaming completions must include `[DONE]` or a successful terminal finish
+reason. A truncated stream, `finish_reason: length`, or `content_filter` rejects
+with an `IncompleteCompletionError`; length/filter failures also reject on the
+non-streaming path. Tokens may already have reached `onToken`, so publish file
+changes only after the completion promise resolves. Partial streams are not
+automatically retried, avoiding replay of a possibly billed request.
+
+Disk-backed relevance caches retain version-1 JSON and coordinate updated
+Node/Python writers. See [cache coordination and compatibility](CACHE_PROTOCOL.md)
+for lock recovery, timeout behavior, and the requirement to upgrade concurrent
+writers together. Browser and memory-only caches keep their existing behavior.
+
 ## Configuration
 
 Configuration comes from environment variables (Node) or `setEnv(...)` overrides (browser). OAuth sign-in sets the API key override for you.
