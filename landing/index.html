@@ -728,11 +728,12 @@ from patchling import (
 </div>
 
 <script type="module">
-import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile }
+import { buildEnvironment, generateDiff, smartapply, parseDiffPerFile, callLlmForApply }
   from "https://esm.sh/patchling";
 import { registerClient, beginSignIn, completeSignIn }
   from "https://esm.sh/patchling/oauth";
 import { filterRelevant, DEFAULT_FILTER_MODEL } from "./relevance.js";
+import { callLlm } from "./lib/llm.js";
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT_MODEL = "xiaomi/mimo-v2.6-flash";
@@ -981,7 +982,10 @@ let running = false;
 
 /* ---------- key + model storage ---------- */
 const getKey = () => localStorage.getItem("pl_key");
-const setKey = (k) => (k ? localStorage.setItem("pl_key", k) : localStorage.removeItem("pl_key"));
+const setKey = (k) => {
+  k ? localStorage.setItem("pl_key", k) : localStorage.removeItem("pl_key");
+  invalidateModels();
+};
 // Replace previous factory picks; preserve visitors' custom model choices.
 const savedModel = localStorage.getItem("pl_model");
 let MODEL = savedModel && !["zai-org/glm-5.2:thinking", "xiaomi/mimo-v2.5-pro-ultraspeed"].includes(savedModel)
@@ -989,6 +993,7 @@ let MODEL = savedModel && !["zai-org/glm-5.2:thinking", "xiaomi/mimo-v2.5-pro-ul
 
 /* ---------- model picker (same pattern as the live examples) ---------- */
 let allModels = null, topOrder = new Map();
+let modelsLoaded = false, modelsKey = null, modelsRequest = null;
 const LABS = [
   ["OpenAI", /^openai\/(gpt-[0-9]|o[1-9])/i],
   ["Anthropic", /claude-(opus|sonnet)/i],
@@ -1028,19 +1033,55 @@ function renderModelRow() {
   $("modelprice").textContent = m.prompt != null ? `(${px(m.prompt)} / ${px(m.completion)} per 1M)` : "";
 }
 async function loadModels() {
-  if (allModels) return allModels;
-  let arr = [];
-  try {
-    const headers = {}; const k = getKey(); if (k) headers.Authorization = `Bearer ${k}`;
-    arr = (await (await fetch("https://nano-gpt.com/api/v1/models?detailed=true", { headers })).json()).data || [];
-  } catch { /* offline / blocked — the exact-id path still works */ }
-  allModels = arr.map((m) => ({ id: m.id, prompt: m.pricing?.prompt, completion: m.pricing?.completion, created: m.created })).filter((m) => m.id);
-  if (!allModels.length) allModels = [{ id: DEFAULT_MODEL }];
-  computeTop();
-  allModels.sort((a, b) => (rank(a.id) - rank(b.id)) || a.id.localeCompare(b.id));
+  const key = getKey() || "";
+  if (modelsLoaded && modelsKey === key) return allModels;
+  if (modelsRequest && modelsRequest.key === key) return modelsRequest.promise;
+  const request = { key, promise: null };
+  modelsRequest = request;
+  request.promise = (async () => {
+    let next, loaded = false;
+    try {
+      const headers = {}; if (key) headers.Authorization = `Bearer ${key}`;
+      const response = await fetch("https://nano-gpt.com/api/v1/models?detailed=true", { headers });
+      if (!response.ok) throw new Error("Model catalog request failed");
+      const data = (await response.json()).data;
+      if (!Array.isArray(data)) throw new Error("Invalid model catalog");
+      next = data.filter((m) => m && typeof m.id === "string" && m.id.trim()).map((m) => ({
+        id: m.id, prompt: m.pricing?.prompt, completion: m.pricing?.completion, created: m.created,
+      }));
+      if (!next.length) throw new Error("Empty model catalog");
+      loaded = true;
+    } catch { next = [{ id: DEFAULT_MODEL }]; } // exact-id entry remains available; the next open retries
+    try {
+      // A sign-in/out or newer request must not inherit an older account's catalog/prices.
+      if (modelsRequest !== request || (getKey() || "") !== key) return allModels || [{ id: DEFAULT_MODEL }];
+      allModels = next;
+      modelsLoaded = loaded;
+      modelsKey = key;
+      computeTop();
+      allModels.sort((a, b) => (rank(a.id) - rank(b.id)) || a.id.localeCompare(b.id));
+      renderModelRow();
+      renderFilterModelRow();
+      return allModels;
+    } finally {
+      if (modelsRequest === request) modelsRequest = null;
+    }
+  })();
+  return request.promise;
+}
+function invalidateModels() {
+  allModels = null;
+  modelsLoaded = false;
+  modelsKey = null;
+  modelsRequest = null;
+  topOrder = new Map();
+  for (const prefix of ["model", "filtermodel"]) {
+    $(prefix + "picker").style.display = "none";
+    $(prefix + "list").innerHTML = "";
+    $(prefix + "count").textContent = "";
+  }
   renderModelRow();
   renderFilterModelRow();
-  return allModels;
 }
 function modelButton(m) {
   const b = document.createElement("button");
@@ -1430,7 +1471,7 @@ function formatClassifierCost(decisions, price) {
 // The punchline, told only after it happened: which files git apply would
 // have bounced, and what smartapply did about it. Built from the actual run
 // outcome, so it's just as true in real mode as in the canned demo.
-function renderVerdict(perFile, inputFiles, updated, llmResolved, decisions, price) {
+function renderVerdict(perFile, inputFiles, updated, llmResolved, decisions, price, runMode = mode, scenario = SCENARIOS[scenarioKey]) {
   const v = $("verdict");
   v.innerHTML = "";
   const repaired = [...llmResolved].filter((p) => p in updated);
@@ -1462,10 +1503,10 @@ function renderVerdict(perFile, inputFiles, updated, llmResolved, decisions, pri
 
   if (decisions) line("ok", formatClassifierCost(decisions, price));
 
-  if (mode === "demo" && SCENARIOS[scenarioKey].reveal) {
+  if (runMode === "demo" && scenario.reveal) {
     const why = document.createElement("p");
     why.className = "vwhy";
-    why.textContent = SCENARIOS[scenarioKey].reveal;
+    why.textContent = scenario.reveal;
     v.appendChild(why);
   }
   v.style.display = "block";
@@ -1481,11 +1522,15 @@ function setBadge(card, cls, text, title) {
 /* ---------- the run ---------- */
 async function run() {
   const scn = SCENARIOS[scenarioKey];
+  // Settings changed during a run apply to the next run, never halfway through this one.
+  const runMode = mode;
+  const runDiffModel = MODEL;
+  const runApplyModel = APPLY_MODEL;
 
   // Demo mode replays a canned response, so it must run against the canned
   // files and goal. If the visitor edited either, reset (and say so) rather
   // than lie about what produced the output.
-  if (mode === "demo") {
+  if (runMode === "demo") {
     const pristine = JSON.stringify(files) === JSON.stringify(scn.files)
       && $("goal").value.trim() === scn.goal;
     files = { ...scn.files };
@@ -1528,18 +1573,18 @@ async function run() {
     let decisions = null;
     if (filtering) {
       $("decisionwrap").style.display = "block";
-      $("filtersrc").textContent = mode === "demo" ? "· pre-recorded decisions" : "· live, cheap model";
+      $("filtersrc").textContent = runMode === "demo" ? "· pre-recorded decisions" : "· live, cheap model";
       decisions = await collectDecisions(inputFiles, goal, runId, runModel);
       if (!isCurrentRun(runId)) return;
     }
 
     if (!isCurrentRun(runId)) return;
     $("phase").textContent = "generating diff…";
-    $("diffsrc").textContent = mode === "demo" ? "· pre-recorded reply, real engine" : "· live from NanoGPT";
+    $("diffsrc").textContent = runMode === "demo" ? "· pre-recorded reply, real engine" : "· live from NanoGPT";
     $("diffwrap").style.display = "block";
-    const genOpts = mode === "demo"
+    const genOpts = runMode === "demo"
       ? { callLlm: makeFakeCallLlm(scn), onToken: onDiffToken }
-      : { apiKey: key, model: MODEL, onToken: onDiffToken };
+      : { apiKey: key, model: runDiffModel, callLlm, onToken: onDiffToken };
 
     const diff = await generateDiff(buildEnvironment(filesForDiff(inputFiles, decisions)), goal, genOpts);
     if (!isCurrentRun(runId)) return;
@@ -1579,9 +1624,13 @@ async function run() {
       pre.scrollTop = pre.scrollHeight;
     };
 
-    const applyOpts = mode === "demo"
+    const applyOpts = runMode === "demo"
       ? { callLlmForApply: makeFakeApply(scn), onToken: onApplyToken }
-      : { apiKey: key, model: APPLY_MODEL, onToken: onApplyToken };
+      : {
+        apiKey: key, model: runApplyModel, onToken: onApplyToken,
+        callLlmForApply: (path, original, patch, model, opts) =>
+          callLlmForApply(path, original, patch, model, { ...opts, callLlm }),
+      };
 
     const updated = await smartapply(diff, inputFiles, applyOpts);
     if (!isCurrentRun(runId)) return;
@@ -1611,14 +1660,14 @@ async function run() {
     renderEditors();
     renderPreview();
 
-    renderVerdict(perFile, inputFiles, updated, llmResolved, decisions, runPrice);
+    renderVerdict(perFile, inputFiles, updated, llmResolved, decisions, runPrice, runMode, scn);
 
     const cost = decisions ? formatClassifierCost(decisions, runPrice) : "";
     $("phase").textContent = cost
       ? "done ✓ — " + cost + " — the preview and files above are the new map"
       : "done ✓ — the preview and files above are the new map";
     document.querySelector("#status .spin").style.display = "none";
-    if (mode === "demo") $("upsell").style.display = "block";
+    if (runMode === "demo") $("upsell").style.display = "block";
   } catch (e) {
     if (!isCurrentRun(runId)) return;
     $("phase").textContent = "error";
