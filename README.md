@@ -75,9 +75,14 @@ changes only after the completion promise resolves. Partial streams are not
 automatically retried, avoiding replay of a possibly billed request.
 
 Disk-backed relevance caches retain version-1 JSON and coordinate updated
-Node/Python writers. See [cache coordination and compatibility](CACHE_PROTOCOL.md)
-for lock recovery, timeout behavior, and the requirement to upgrade concurrent
-writers together. Browser and memory-only caches keep their existing behavior.
+Node/Python writers through a persistent `.lock/` sidecar directory. Published
+npm `patchling <=0.3.1` and Python `patchling <=0.9.4` ignore the claims and can
+overwrite newer entries: use separate cache files or disable disk caching while
+any older writer remains active. Stop writers before copying an old cache to a
+new path. Merging the JS fix does not upgrade installed npm clients. See
+[cache coordination and compatibility](https://github.com/255BITS/patchling/blob/main/CACHE_PROTOCOL.md)
+for lock recovery and timeout behavior. Browser and memory-only caches keep
+their existing behavior.
 
 ## Configuration
 

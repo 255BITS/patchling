@@ -1,8 +1,23 @@
 # Changelog
 
-## [0.3.1] — Unreleased
+## [0.3.2] — Unreleased
 
-Stricter UTF-8 tail handling, a guard against Python-style option names in `filterRelevant`, a typed `SmartApplyError` for smartapply refusals, and a new default model to replace a retired one. No change to `generateDiff` or to what `smartapply` writes.
+Reject incomplete OpenAI-compatible completions and preserve concurrent disk-cache writes. This version prepares the fixes merged in #16 for a future npm release; it has not been published.
+
+### Behavior changes
+
+- **Incomplete completions reject.** A stream must end with `[DONE]` or a recognized successful terminal finish reason. EOF without either, or `finish_reason: length` / `content_filter`, rejects with an error named `IncompleteCompletionError`; length/filter failures also reject on the non-streaming path. Callers that previously accepted partial output now receive an error. `onToken` may already have delivered partial text: commit file changes only after the completion promise resolves. Partial streams are not automatically retried. Reader cleanup cannot delay the result or original error.
+- **Disk-cache flushes merge only locally changed records under a shared Node/Python lock protocol.** The cache remains `{ version: 1, entries }` with unchanged keys and records. A persistent `<absolute-cache-path>.lock/` directory coordinates upgraded writers; lock acquisition waits at most two seconds apart from filesystem-call latency. A failed direct Node `flush()` rejects and keeps unsaved entries retryable; `filterRelevant` logs cache failures and continues. Browser and memory-only caches are unchanged. See [cache coordination and recovery](CACHE_PROTOCOL.md).
+- **Mixed-version writers still need separate cache files.** Published npm `patchling <=0.3.1` and Python `patchling <=0.9.4` ignore the claims and can overwrite newer entries. While any older writer remains active, use a separate cache file for upgraded clients or disable disk caching. Stop processes using the old file before copying it to another path. Merging this version does not upgrade installed npm clients.
+
+### Repository-only changes
+
+- The homepage captures its mode and model choices at run start. Model catalogs retry after temporary failures and discard stale responses when credentials change; credential changes also clear rendered picker choices.
+- Offline regressions cover completion termination and cancellation, cache contention/recovery and independent Node/Python writers, and homepage run/catalog state. The version bump does not publish npm or deploy the website.
+
+## [0.3.1] — 2026-10-31
+
+Published on npm from `b8b7936a2f38f0e3536f29206c3b0b29ba1a57a2`, including stricter UTF-8 tail handling, a guard against Python-style option names in `filterRelevant`, typed `SmartApplyError` refusals, patched Node runtime requirements, and the replacement default model. The default-model-only reference in draft #15 is not the published tarball and remains marked **NOT FOR MERGE**.
 
 ### Behavior changes
 
