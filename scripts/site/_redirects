@@ -1,0 +1,4 @@
+# Cloudflare Pages redirects (copied to dist/ by scripts/build-site.sh).
+/docs /py/ 301
+/docs/ /py/ 301
+/docs/* /py/:splat 301

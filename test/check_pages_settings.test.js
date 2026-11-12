@@ -29,8 +29,8 @@ test('the saved live response passes every check', () => {
 const negatives = {
   'preview deployments none': [(p) => { p.source.config.preview_deployment_setting = 'none'; }, ['previewDeploymentSetting']],
   'root_dir src': [(p) => { p.build_config.root_dir = 'src'; }, ['rootDir']],
-  'destination_dir changed': [(p) => { p.build_config.destination_dir = 'dist'; }, ['destinationDir']],
-  'build command added': [(p) => { p.build_config.build_command = 'npm run build'; }, ['buildCommand']],
+  'destination_dir still landing': [(p) => { p.build_config.destination_dir = 'landing'; }, ['destinationDir']],
+  'build command missing': [(p) => { p.build_config.build_command = ''; }, ['buildCommand']],
   'missing patchling.pages.dev': [(p) => { p.domains = ['patchling.app']; }, ['domains']],
   'missing patchling.app': [(p) => { p.domains = ['patchling.pages.dev']; }, ['domains']],
   'extra domain': [(p) => { p.domains.push('www.patchling.app'); }, ['domains']],
