@@ -6,6 +6,9 @@ on:
     tags: ['v*']
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test (Node ${{ matrix.node }})
@@ -48,3 +51,97 @@ jobs:
       - name: main is the latest tag or ahead with an unreleased changelog entry
         if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
         run: node scripts/check-release-version.mjs --main
+
+  package:
+    name: Prepare an unpublished version for npm
+    if: github.repository == '255BITS/patchling' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, benchmark, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.registry.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.1"
+      - name: Check whether this exact version exists
+        id: registry
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          const { name, version } = JSON.parse(readFileSync('package.json', 'utf8'));
+          if (name !== 'patchling' || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+            throw new Error('Expected a Patchling release version');
+          }
+          const record = await fetch(`https://registry.npmjs.org/patchling/${encodeURIComponent(version)}`, {
+            signal: AbortSignal.timeout(15_000), redirect: 'error',
+          });
+          if (record.status === 404) {
+            appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          } else {
+            if (!record.ok) throw new Error(`npm registry returned HTTP ${record.status}`);
+            const published = await record.json();
+            if (published.name !== name || published.version !== version) {
+              throw new Error('npm registry response does not identify the requested version');
+            }
+            console.log(`${name}@${version} is already published`);
+          }
+          JS
+      - name: Pack the tested source
+        if: steps.registry.outputs.version != ''
+        run: npm pack --ignore-scripts
+      - uses: actions/upload-artifact@v4
+        if: steps.registry.outputs.version != ''
+        with:
+          name: npm-distribution
+          path: patchling-*.tgz
+          if-no-files-found: error
+
+  publish-npm:
+    name: Publish to npm
+    needs: package
+    if: needs.package.outputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: publish-npm-${{ needs.package.outputs.version }}
+      cancel-in-progress: false
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/patchling/v/${{ needs.package.outputs.version }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.22.1"
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-distribution
+      - name: Publish the tested tarball with Trusted Publishing
+        env:
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process';
+          const version = process.env.VERSION;
+          const record = await fetch(`https://registry.npmjs.org/patchling/${encodeURIComponent(version)}`, {
+            signal: AbortSignal.timeout(15_000), redirect: 'error',
+          });
+          if (record.ok) {
+            const published = await record.json();
+            if (published.name !== 'patchling' || published.version !== version) {
+              throw new Error('npm registry response does not identify the requested version');
+            }
+            console.log(`patchling@${version} is already published`);
+          } else if (record.status === 404) {
+            const tag = version.includes('-') ? 'next' : 'latest';
+            execFileSync('npm', ['publish', `./patchling-${version}.tgz`, '--ignore-scripts', '--access', 'public', '--tag', tag], { stdio: 'inherit' });
+          } else {
+            throw new Error(`npm registry returned HTTP ${record.status}`);
+          }
+          JS
