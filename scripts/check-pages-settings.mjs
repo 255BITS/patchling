@@ -6,6 +6,7 @@
  *   node scripts/check-pages-settings.mjs                  # live: CLOUDFLARE_API_TOKEN + CF_ACCOUNT_ID
  *   node scripts/check-pages-settings.mjs --from-file r.json   # a saved API response
  *   node scripts/check-pages-settings.mjs --from-file -        # the response on stdin
+ *   node scripts/check-pages-settings.mjs --expect-production-sha <merge SHA>
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -26,9 +27,10 @@ export const EXPECTED = Object.freeze({
  * Compare a Pages project API response (`{ result }` or the bare project)
  * to {@link EXPECTED}.
  * @param {any} response
+ * @param {string} [expectedProductionSha] Exact merge commit to verify, if supplied.
  * @returns {{ ok: boolean, checks: { name: string, ok: boolean, got: unknown, want: unknown }[], info: string }}
  */
-export function checkPagesProject(response) {
+export function checkPagesProject(response, expectedProductionSha) {
   const r = (response && response.result) || response || {};
   const src = (r.source && r.source.config) || {};
   const bc = r.build_config || {};
@@ -56,7 +58,23 @@ export function checkPagesProject(response) {
     checks.push({ name: 'source.productionBranch', ok: false, got: src.production_branch, want: EXPECTED.productionBranch });
   }
   const dep = r.canonical_deployment || {};
-  const meta = (dep.deployment_trigger && dep.deployment_trigger.metadata) || {};
+  const trigger = dep.deployment_trigger || {};
+  const meta = trigger.metadata || {};
+  if (expectedProductionSha !== undefined) {
+    const deploymentChecks = {
+      productionCommit: [meta.commit_hash, expectedProductionSha],
+      productionRef: [meta.branch, EXPECTED.productionBranch],
+      productionCommitDirty: [meta.commit_dirty, false],
+      deploymentEnvironment: [dep.environment, 'production'],
+      deploymentStage: [dep.latest_stage?.name, 'deploy'],
+      deploymentStatus: [dep.latest_stage?.status, 'success'],
+      deploymentTrigger: [trigger.type, 'github:push'],
+      deploymentSkipped: [dep.is_skipped, false],
+    };
+    for (const [name, [got, want]] of Object.entries(deploymentChecks)) {
+      checks.push({ name, ok: got === want, got: got ?? null, want });
+    }
+  }
   const info = `latest production: ${meta.branch ?? '?'} @ ${String(meta.commit_hash || '').slice(0, 7)} ${dep.created_on || ''}`.trim();
   return { ok: checks.every((c) => c.ok), checks, info };
 }
@@ -116,7 +134,13 @@ async function load(argv) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   try {
-    const report = checkPagesProject(unwrapEnvelope(await load(process.argv.slice(2))));
+    const args = process.argv.slice(2);
+    const shaIndex = args.indexOf('--expect-production-sha');
+    const expectedProductionSha = shaIndex < 0 ? undefined : args[shaIndex + 1];
+    if (shaIndex >= 0 && !/^[a-f0-9]{40}$/.test(expectedProductionSha ?? '')) {
+      throw new Error('--expect-production-sha needs a full 40-character Git commit SHA');
+    }
+    const report = checkPagesProject(unwrapEnvelope(await load(args)), expectedProductionSha);
     console.log(formatReport(report));
     process.exit(report.ok ? 0 : 1);
   } catch (err) {

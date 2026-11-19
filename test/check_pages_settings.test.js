@@ -62,6 +62,42 @@ test('CLI: stdin with preview none exits 1', () => {
   assert.match(run.stdout, /FAIL previewDeploymentSetting = "none"/);
 });
 
+test('CLI verifies the exact successful production deployment when requested', () => {
+  const sha = 'b8b7936a2f38f0e3536f29206c3b0b29ba1a57a2';
+  const response = ok();
+  const deployment = {
+    environment: 'production',
+    is_skipped: false,
+    latest_stage: { name: 'deploy', status: 'success' },
+    deployment_trigger: { type: 'github:push', metadata: { branch: 'main', commit_hash: sha, commit_dirty: false } },
+  };
+  response.result.canonical_deployment = deployment;
+  const run = (expected) => spawnSync(process.execPath,
+    [script, '--from-file', '-', '--expect-production-sha', expected],
+    { input: JSON.stringify(response), encoding: 'utf8', env: {} });
+
+  assert.equal(run(sha).status, 0);
+  const stale = run('a'.repeat(40));
+  assert.equal(stale.status, 1);
+  assert.match(stale.stdout, /FAIL productionCommit/);
+  assert.equal(run(sha.slice(0, 7)).status, 2);
+
+  for (const [name, changed, expectedFailure] of [
+    ['preview', { environment: 'preview' }, /FAIL deploymentEnvironment/],
+    ['skipped', { is_skipped: true }, /FAIL deploymentSkipped/],
+    ['build only', { latest_stage: { name: 'build', status: 'success' } }, /FAIL deploymentStage/],
+    ['failed', { latest_stage: { name: 'deploy', status: 'failure' } }, /FAIL deploymentStatus/],
+    ['manual upload', { deployment_trigger: { ...deployment.deployment_trigger, type: 'ad_hoc' } }, /FAIL deploymentTrigger/],
+    ['dirty source', { deployment_trigger: { ...deployment.deployment_trigger,
+      metadata: { ...deployment.deployment_trigger.metadata, commit_dirty: true } } }, /FAIL productionCommitDirty/],
+  ]) {
+    response.result.canonical_deployment = { ...deployment, ...changed };
+    const result = run(sha);
+    assert.equal(result.status, 1, name);
+    assert.match(result.stdout, expectedFailure);
+  }
+});
+
 test('docs/deploy.md table matches EXPECTED exactly', () => {
   const doc = readFileSync(new URL('../docs/deploy.md', import.meta.url), 'utf8');
   const rows = {

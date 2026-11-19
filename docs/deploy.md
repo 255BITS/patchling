@@ -70,7 +70,20 @@ invalid JSON), even when the project data would match. It never writes.
 `npm test` runs it offline against `test/fixtures/pages/` with a negative case
 for each check.
 
-Last verified 2026-10-13 via the API: production branch `main`,
-automatic production deployments enabled, preview deployments `all`,
-build output `landing`, no build command, domains `patchling.pages.dev` and
-`patchling.app`, latest production deployment = `main` @ `58a3858` (#5).
+## Verify a production merge
+
+After an intended production merge without `[CF-Pages-Skip]`, pass the full
+merge commit SHA. The verifier checks the active deployment and succeeds once
+Cloudflare reports a successful GitHub `main` deployment of that exact commit.
+The same flag works on a saved API response.
+
+```sh
+CF_ACCOUNT_ID=9a79801cc6e129d0ab3447ff14820c4a \
+  node scripts/check-pages-settings.mjs --expect-production-sha "$MERGE_SHA"
+```
+
+A preview can build the same `landing/` files while the production deployment
+still serves an earlier commit. On 2026-11-19, Cloudflare reported production
+at `b8b7936` and recorded explicit commit-message skips on the four newer
+merges. The `042959c6.patchling.pages.dev` preview served all seven files from
+the `landing/` tree at `main` commit `25c5d21`.
