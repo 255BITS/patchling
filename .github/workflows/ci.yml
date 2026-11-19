@@ -128,20 +128,30 @@ jobs:
         run: |
           node --input-type=module <<'JS'
           import { execFileSync } from 'node:child_process';
+          import { createHash } from 'node:crypto';
+          import { readFileSync } from 'node:fs';
+          import { setTimeout as delay } from 'node:timers/promises';
           const version = process.env.VERSION;
-          const record = await fetch(`https://registry.npmjs.org/patchling/${encodeURIComponent(version)}`, {
+          const archive = `./patchling-${version}.tgz`;
+          const integrity = `sha512-${createHash('sha512').update(readFileSync(archive)).digest('base64')}`;
+          const url = `https://registry.npmjs.org/patchling/${encodeURIComponent(version)}`;
+          const lookup = () => fetch(url, {
             signal: AbortSignal.timeout(15_000), redirect: 'error',
           });
-          if (record.ok) {
-            const published = await record.json();
-            if (published.name !== 'patchling' || published.version !== version) {
-              throw new Error('npm registry response does not identify the requested version');
-            }
-            console.log(`patchling@${version} is already published`);
-          } else if (record.status === 404) {
+          let record = await lookup();
+          if (record.status === 404) {
             const tag = version.includes('-') ? 'next' : 'latest';
-            execFileSync('npm', ['publish', `./patchling-${version}.tgz`, '--ignore-scripts', '--access', 'public', '--tag', tag], { stdio: 'inherit' });
-          } else {
-            throw new Error(`npm registry returned HTTP ${record.status}`);
+            execFileSync('npm', ['publish', archive, '--ignore-scripts', '--access', 'public', '--tag', tag], { stdio: 'inherit' });
+            for (const waitMs of [0, 2_000, 2_000, 2_000]) {
+              await delay(waitMs);
+              record = await lookup();
+              if (record.status !== 404) break;
+            }
           }
+          if (!record.ok) throw new Error(`npm registry returned HTTP ${record.status}`);
+          const published = await record.json();
+          if (published.name !== 'patchling' || published.version !== version || published.dist?.integrity !== integrity) {
+            throw new Error(`npm metadata for patchling@${version} does not match the tested archive`);
+          }
+          console.log(`Verified the tested patchling@${version} archive on npm`);
           JS
